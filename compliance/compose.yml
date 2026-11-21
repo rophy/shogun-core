@@ -1,0 +1,84 @@
+# OGC compliance test setup for SHOGun-Core. See README.md.
+name: shogun-compliance
+
+services:
+  geoserver:
+    image: docker.osgeo.org/geoserver:${GEOSERVER_VERSION:-3.0.2}
+    environment:
+      # data dir copy prepared by run-suite.sh
+      GEOSERVER_DATA_DIR: /opt/geoserver_data
+      SKIP_DEMO_DATA: "true"
+      # e.g. GEOSERVER_EXTENSIONS=wps for the WPS 1.0 suite (downloaded at start)
+      INSTALL_EXTENSIONS: "true"
+      STABLE_EXTENSIONS: ${GEOSERVER_EXTENSIONS:-}
+      CORS_ENABLED: "false"
+    volumes:
+      - ./.run/geoserver_data:/opt/geoserver_data
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/geoserver/web/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  shogun:
+    # System under test: the generated test webapp (see webapp/), on Java 8.
+    image: tomcat:9.0-jdk8-temurin
+    volumes:
+      - ./webapp/target/shogun-compliance-1.0-SNAPSHOT.war:/usr/local/tomcat/webapps/ROOT.war:ro
+    ports:
+      - "127.0.0.1:18081:8080"
+    depends_on:
+      geoserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -o /dev/null -u user:shogun http://localhost:8080/index.html || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  nginx:
+    # Adds Basic auth for the SHOGun-Core test user, because TEAM Engine cannot log in.
+    image: nginx:1.27-alpine
+    environment:
+      SHOGUN_BASIC_AUTH: dXNlcjpzaG9ndW4=   # base64 of user:shogun
+      NGINX_ENVSUBST_FILTER: SHOGUN_
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "127.0.0.1:18082:80"
+    depends_on:
+      - shogun
+
+  teamengine:
+    image: ogccite/${ETS_IMAGE:-ets-wms13}:${ETS_TAG:-latest}
+    volumes:
+      # sample Execute requests for the WPS 1.0 suite
+      - ./wps:/root/wps:ro
+    ports:
+      - "127.0.0.1:18083:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/teamengine/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  postgres:
+    # Data store of the WFS 2.0 CITE data dir (database cite_wfs20, user cite).
+    image: postgis/postgis:15-3.5-alpine
+    environment:
+      POSTGRES_DB: geoserver
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./.cache/geoserver-cite/wfs20/01-init-user.sh:/docker-entrypoint-initdb.d/01-init-user.sh:ro
+      - ./.cache/geoserver-cite/wfs20/citewfs-2.0/dataset-sf0-postgis2.sql:/docker-entrypoint-initdb.d/02-init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cite_wfs20"]
+      interval: 5s
+      timeout: 5s
+      retries: 30

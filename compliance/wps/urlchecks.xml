@@ -1,0 +1,9 @@
+<checks>
+  <regex>
+    <name>wpsTestInput</name>
+    <description>WPS CITE test input</description>
+    <enabled>true</enabled>
+    <regex>^http://localhost:8080/geoserver/www/point\.wkt$</regex>
+  </regex>
+  <enabled>true</enabled>
+</checks>

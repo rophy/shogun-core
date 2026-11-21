@@ -1,0 +1,9 @@
+# downloaded GeoServer CITE data (GPL-2.0, fetched by fetch-data.sh)
+.cache/
+# per-run copy of the GeoServer data dir
+.run/
+webapp/target/
+# raw TEAM Engine logs (several MB each)
+results/*.xml
+# Python byte code
+__pycache__/
