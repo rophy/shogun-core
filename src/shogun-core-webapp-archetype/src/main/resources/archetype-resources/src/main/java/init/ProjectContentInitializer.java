@@ -31,7 +31,7 @@ public class ProjectContentInitializer extends ContentInitializer {
 
 		if(projectInitEnabled){
 			// init project specific stuff...
-			LOG.info("Initializing project specific stuff...");
+			logger.info("Initializing project specific stuff...");
 		}
 
 	}

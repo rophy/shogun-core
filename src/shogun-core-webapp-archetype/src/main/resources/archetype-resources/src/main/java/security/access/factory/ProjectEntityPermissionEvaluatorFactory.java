@@ -4,7 +4,7 @@
 package ${package}.security.access.factory;
 
 import ${package}.model.ProjectApplication;
-{package}.security.access.entity.ProjectApplicationPermissionEvaluator;
+import ${package}.security.access.entity.ProjectApplicationPermissionEvaluator;
 import de.terrestris.shoguncore.model.PersistentObject;
 import de.terrestris.shoguncore.security.access.entity.PersistentObjectPermissionEvaluator;
 import de.terrestris.shoguncore.security.access.factory.EntityPermissionEvaluatorFactory;

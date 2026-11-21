@@ -44,7 +44,7 @@ public class ProjectApplicationPermissionEvaluator<E extends ProjectApplication>
 		// always grant CREATE right for this entity
 		// This is just a demo!
 		if (permission.equals(Permission.CREATE)) {
-			LOG.trace("Granting CREATE for project application.");
+			logger.trace("Granting CREATE for project application.");
 			return true;
 		}
 

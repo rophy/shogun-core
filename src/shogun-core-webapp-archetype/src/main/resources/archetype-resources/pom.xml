@@ -163,7 +163,7 @@
 
         <dependency>
             <groupId>de.terrestris</groupId>
-            <artifactId>shogun-core</artifactId>
+            <artifactId>shogun-core-main</artifactId>
             <version>${shogun.version}</version>
         </dependency>
 

@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
-{package}.model.ProjectApplication;
+import ${package}.model.ProjectApplication;
 import ${package}.dao.ProjectApplicationDao;
 import de.terrestris.shoguncore.service.ApplicationService;
 

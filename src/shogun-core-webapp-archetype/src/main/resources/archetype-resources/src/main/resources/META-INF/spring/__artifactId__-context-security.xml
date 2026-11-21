@@ -35,6 +35,16 @@
         <csrf disabled="true"/>
     </http>
 
+    <!-- OGC services through the GeoServer interceptor. OGC clients send
+         POST requests (e.g. XML GetFeature, WFS-T) without a CSRF token, so
+         CSRF protection is off here. Clients authenticate with Basic auth or
+         with the session of the web login. -->
+    <http auto-config='false' entry-point-ref="basicAuthEntryPoint" pattern="/geoserver.action/**" use-expressions="true" access-decision-manager-ref="accessDecisionManager">
+        <intercept-url pattern="/**" access="hasRole('${symbol_dollar}{role.defaultUserRoleName}')"/>
+        <custom-filter ref="basicAuthenticationFilter" before="FORM_LOGIN_FILTER"/>
+        <csrf disabled="true"/>
+    </http>
+
     <!-- Web/URL security -->
     <http auto-config="true" use-expressions="true" access-decision-manager-ref="accessDecisionManager">
 

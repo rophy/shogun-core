@@ -8,9 +8,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-{package}.dao.ProjectApplicationDao;
+import ${package}.dao.ProjectApplicationDao;
 import ${package}.model.ProjectApplication;
-{package}.service.ProjectApplicationService;
+import ${package}.service.ProjectApplicationService;
 import de.terrestris.shoguncore.rest.ApplicationRestController;
 
 /**
