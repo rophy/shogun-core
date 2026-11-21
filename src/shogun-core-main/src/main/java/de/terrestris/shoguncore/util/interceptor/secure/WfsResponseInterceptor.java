@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import de.terrestris.shoguncore.dao.LayerDao;
+import de.terrestris.shoguncore.dao.UserDao;
+import de.terrestris.shoguncore.model.User;
+import de.terrestris.shoguncore.model.security.Permission;
+import de.terrestris.shoguncore.service.UserService;
 import de.terrestris.shoguncore.model.layer.Layer;
 import de.terrestris.shoguncore.model.layer.source.ImageWmsLayerDataSource;
 import de.terrestris.shoguncore.model.layer.source.TileWmsLayerDataSource;
@@ -39,8 +43,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import static javax.xml.xpath.XPathConstants.NODESET;
 import static org.apache.logging.log4j.LogManager.getLogger;
@@ -55,6 +61,10 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
     @Autowired
     @Qualifier("layerService")
     protected LayerService<Layer, LayerDao<Layer>> layerService;
+
+    @Autowired
+    @Qualifier("userService")
+    protected UserService<User, UserDao<User>> userService;
 
     private void interceptGetCapabilities100(Document doc, String baseUrl) throws XPathExpressionException {
         XPath xpath = XPathFactory.newInstance().newXPath();
@@ -93,30 +103,10 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
     public Response interceptGetCapabilities(MutableHttpServletRequest request, Response response) {
         LOG.debug("Intercepting WFS GetCapabilities response");
         String endpoint = request.getParameterIgnoreCase("CUSTOM_ENDPOINT");
-        if (endpoint == null) {
-            return null;
-        }
-        String proto = request.getHeader("x-forwarded-proto");
-        String requestHost = request.getHeader("x-forwarded-host");
-        // fallbacks in case SHOGun is not behind a reverse proxy
-        if (StringUtils.isEmpty(proto)) {
-            proto = request.getScheme();
-        }
-        if (StringUtils.isEmpty(requestHost)) {
-            requestHost = request.getHeader("x-forwarded-for");
-        }
-        if (StringUtils.isEmpty(requestHost)) {
-            requestHost = request.getServerName();
-        }
-        String baseUrl = proto + "://" + requestHost + request.getContextPath() + "/geoserver.action/" + endpoint;
-        ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        try {
-            DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
-            builderFactory.setNamespaceAware(true);
-            DocumentBuilder builder = builderFactory.newDocumentBuilder();
-            Document doc = builder.parse(new ByteArrayInputStream(response.getBody()));
-            Element root = doc.getDocumentElement();
-            String version = root.getAttribute("version");
+        String baseUrl = ProxyUrls.baseUrl(request, endpoint);
+        String namespace = LayerNames.endpointNamespace(request);
+        return CapabilitiesFilter.filter(response, doc -> {
+            String version = doc.getDocumentElement().getAttribute("version");
             switch (version) {
                 case "1.0.0":
                     interceptGetCapabilities100(doc, baseUrl);
@@ -128,22 +118,13 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
                     interceptGetCapabilities110And200(doc, baseUrl, CommonNamespaces.OWS_11_NS);
                     break;
                 default:
-                    throw new IOException("WFS version is not supported");
+                    throw new IllegalArgumentException("WFS version is not supported");
             }
-            removeLayers(doc);
-            TransformerFactory factory = TransformerFactory.newInstance();
-            Transformer transformer = factory.newTransformer();
-            transformer.transform(new DOMSource(doc), new StreamResult(bout));
-            response.setBody(bout.toByteArray());
-        } catch (ParserConfigurationException | SAXException | IOException | XPathExpressionException | TransformerException e) {
-            LOG.warn("Problem when intercepting WFS GetCapabilities: {}", e.getMessage());
-            LOG.trace("Stack trace:", e);
-            return null;
-        }
-        return response;
+            removeLayers(doc, namespace);
+        });
     }
 
-    private void removeLayers(Document doc) throws XPathExpressionException {
+    private void removeLayers(Document doc, String namespace) throws XPathExpressionException {
         // get all layers allowed for this user in order to filter out not allowed ones
         List<Layer> layers = layerService.findAll();
         List<String> layerNames = new ArrayList<>();
@@ -162,19 +143,29 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
             addNamespace("wfs", "http://www.opengis.net/wfs"));
         NodeList list = (NodeList) xpath.compile("//wfs:FeatureType/wfs:Name").evaluate(doc.getDocumentElement(), NODESET);
         List<Element> toRemove = new ArrayList<>();
-        determineFeatureTypeNodesToRemove(layerNames, list, toRemove);
+        determineFeatureTypeNodesToRemove(layerNames, list, toRemove, namespace);
         xpath.setNamespaceContext(CommonNamespaces.getNamespaceContext().
             addNamespace("wfs", "http://www.opengis.net/wfs/2.0"));
         list = (NodeList) xpath.compile("//wfs:FeatureType/wfs:Name").evaluate(doc.getDocumentElement(), NODESET);
-        determineFeatureTypeNodesToRemove(layerNames, list, toRemove);
+        determineFeatureTypeNodesToRemove(layerNames, list, toRemove, namespace);
         toRemove.forEach(element -> element.getParentNode().removeChild(element));
     }
 
-    private void determineFeatureTypeNodesToRemove(List<String> layerNames, NodeList list, List<Element> toRemove) {
+    private void determineFeatureTypeNodesToRemove(List<String> layerNames, NodeList list, List<Element> toRemove,
+                                                   String namespace) {
+        Set<String> allowed = new HashSet<>();
+        for (String names : layerNames) {
+            if (names != null) {
+                for (String name : names.split(",")) {
+                    if (StringUtils.isNotBlank(name)) {
+                        allowed.add(LayerNames.key(name, namespace));
+                    }
+                }
+            }
+        }
         for (int i = 0; i < list.getLength(); ++i) {
             Element name = (Element) list.item(i);
-            String str = name.getTextContent();
-            if (!layerNames.contains(str)) {
+            if (!allowed.contains(LayerNames.key(name.getTextContent(), namespace))) {
                 toRemove.add((Element) name.getParentNode());
             }
         }
@@ -283,13 +274,51 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
     @Override
     public Response interceptGetFeature(MutableHttpServletRequest request, Response response) {
         LOG.debug("Intercepting WFS GetFeature response");
+        // the request interceptor checked the named types; a request without
+        // type names (stored query) is checked by the returned features
+        if (TypeNames.fromRequest(request).isEmpty() && response.getBody() != null) {
+            String namespace = LayerNames.endpointNamespace(request);
+            FeatureTypes.checkResponse(response.getBody(), FeatureTypes.keys(layerService.findAll(), namespace),
+                namespace);
+        }
         return response;
     }
 
     @Override
     public Response interceptLockFeature(MutableHttpServletRequest request, Response response) {
         LOG.debug("Intercepting WFS LockFeature response");
+        checkLockedFeatures(request, response);
         return response;
+    }
+
+    /**
+     * GetFeatureWithLock: the returned features need UPDATE.
+     */
+    @Override
+    public Response interceptGetFeatureWithLock(MutableHttpServletRequest request, Response response) {
+        LOG.debug("Intercepting WFS GetFeatureWithLock response");
+        checkLockedFeatures(request, response);
+        return response;
+    }
+
+    /**
+     * For a lock without type names (stored query), the locked features need
+     * UPDATE. The request interceptor checked locks with type names. A lock
+     * of other features stays until it expires; the client gets an exception.
+     */
+    private void checkLockedFeatures(MutableHttpServletRequest request, Response response) {
+        if (!TypeNames.fromRequest(request).isEmpty() || response.getBody() == null) {
+            return;
+        }
+        User user = userService.getUserBySession();
+        List<Layer> updatable = new ArrayList<>();
+        for (Layer layer : layerService.findAll()) {
+            if (FeatureTypes.hasPermission(layer, user, Permission.UPDATE)) {
+                updatable.add(layer);
+            }
+        }
+        String namespace = LayerNames.endpointNamespace(request);
+        FeatureTypes.checkResponse(response.getBody(), FeatureTypes.keys(updatable, namespace), namespace);
     }
 
     @Override

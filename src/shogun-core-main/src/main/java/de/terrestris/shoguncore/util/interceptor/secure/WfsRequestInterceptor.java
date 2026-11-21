@@ -3,21 +3,15 @@ package de.terrestris.shoguncore.util.interceptor.secure;
 import de.terrestris.shoguncore.dao.LayerDao;
 import de.terrestris.shoguncore.dao.UserDao;
 import de.terrestris.shoguncore.model.User;
-import de.terrestris.shoguncore.model.UserGroup;
 import de.terrestris.shoguncore.model.layer.Layer;
-import de.terrestris.shoguncore.model.layer.source.ImageWmsLayerDataSource;
-import de.terrestris.shoguncore.model.layer.source.WfsLayerDataSource;
 import de.terrestris.shoguncore.model.security.Permission;
-import de.terrestris.shoguncore.model.security.PermissionCollection;
 import de.terrestris.shoguncore.service.LayerService;
 import de.terrestris.shoguncore.service.UserService;
-import de.terrestris.shoguncore.util.enumeration.OgcEnum;
 import de.terrestris.shoguncore.util.interceptor.GeoserverAuthHeaderRequest;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
 import de.terrestris.shoguncore.util.interceptor.WfsRequestInterceptorInterface;
 
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,8 +19,6 @@ import org.springframework.beans.factory.annotation.Value;
 
 import static org.apache.logging.log4j.LogManager.getLogger;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -70,7 +62,7 @@ public class WfsRequestInterceptor extends BaseInterceptor implements WfsRequest
     @Value("${geoserver.password:}")
     private String gsPass;
 
-   /**
+    /**
      *
      */
     @Override
@@ -86,6 +78,7 @@ public class WfsRequestInterceptor extends BaseInterceptor implements WfsRequest
     @Override
     public MutableHttpServletRequest interceptDescribeFeatureType(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WFS DescribeFeatureType");
+        checkTypeNames(request, Permission.READ);
         // response will be intercepted
         return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
@@ -96,8 +89,8 @@ public class WfsRequestInterceptor extends BaseInterceptor implements WfsRequest
     @Override
     public MutableHttpServletRequest interceptGetFeature(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WFS GetFeature");
-        return isAllowed(request, "READ") ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkTypeNames(request, Permission.READ);
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -106,8 +99,8 @@ public class WfsRequestInterceptor extends BaseInterceptor implements WfsRequest
     @Override
     public MutableHttpServletRequest interceptLockFeature(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WFS LockFeature");
-        return isAllowed(request, "UPDATE") ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkTypeNames(request, Permission.UPDATE);
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -116,119 +109,75 @@ public class WfsRequestInterceptor extends BaseInterceptor implements WfsRequest
     @Override
     public MutableHttpServletRequest interceptTransaction(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WFS Transaction");
-        return isAllowed(request, "UPDATE") ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        // WFS 2.0, table 3: an unknown feature type in a transaction is an InvalidValue
+        checkTypeNames(request, Permission.UPDATE, "InvalidValue");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
-     * Check for permission on layer by getting it through service.
-     * For update permissions, we check through custom method.
-     *
-     * @param request   The request
-     * @param paramName The optional parameter name for the layer parameter
-     * @param method    The access method like read or write
-     * @return if the layer is allowed to read for current user
+     * Reads the referenced feature types. Needs READ on them.
      */
-    private boolean isAllowed(
-        MutableHttpServletRequest request, String paramName, String method) {
-        HashSet<String> typeNameParams = new HashSet<String>();
-        String typeNameParam = request.getParameterIgnoreCase(paramName);
-        if (typeNameParam != null) {
-            typeNameParams.add(typeNameParam);
-        } else {
-            // try to get typenames from POST body, if any
-            try {
-                String body = IOUtils.toString(request.getInputStream(), StandardCharsets.UTF_8.name());
-                if (!StringUtils.isEmpty(body) && StringUtils.containsIgnoreCase(body, "typename")) {
-                    String[] typeName = body.split("(?i)typename=\"");
-                    for (int i = 1; i < typeName.length; i++) {
-                        typeNameParams.add(typeName[i].split("\"")[0]);
-                    }
-                }
-            } catch (IOException e) {
-                return false;
-            }
-        }
-
-        List<Layer> all = layerService.findAll();
-        boolean match = false;
-        for (Layer layer : all) {
-            if (layer.getSource() instanceof WfsLayerDataSource) {
-                WfsLayerDataSource source = (WfsLayerDataSource)
-                    layer.getSource();
-                if (typeNameParams.contains(source.getTypeName()) ||
-                    typeNameParams.contains(source.getTypeNames())) {
-                    if (method.equals("UPDATE")) {
-                        match = checkForPermission(layer, Permission.UPDATE);
-                    } else if (method.equals("READ")) {
-                        // implicitly checked by findAll method
-                        match = true;
-                    }
-                    break;
-                }
-            } else if (layer.getSource() instanceof ImageWmsLayerDataSource) {
-                ImageWmsLayerDataSource source = (ImageWmsLayerDataSource)
-                    layer.getSource();
-                if (typeNameParams.contains(source.getLayerNames())) {
-                    if (method.equals("UPDATE")) {
-                        match = checkForPermission(layer, Permission.UPDATE);
-                    } else if (method.equals("READ")) {
-                        // implicitly checked by findAll method
-                        match = true;
-                    }
-                    break;
-                }
-            }
-        }
-        return match;
+    @Override
+    public MutableHttpServletRequest interceptCreateStoredQuery(MutableHttpServletRequest request) {
+        LOG.debug("Intercepting WFS CreateStoredQuery");
+        checkTypeNames(request, Permission.READ);
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
-     * Calls main method with default "typename" parameter
+     * Checks the permission on all type names of the request. A type without
+     * permission gives the same error as an unknown type. A request without
+     * type names (e.g. a stored query) is sent to GeoServer; the response
+     * interceptor checks the returned or locked features.
      *
      * @param request The request
-     * @param method The access method like read or write
-     * @return If the layer is allowed to read for current user
+     * @param permission READ or UPDATE
      */
-    private boolean isAllowed(MutableHttpServletRequest request, String method) {
-        String typeNameParam = OgcEnum.EndPoint.TYPENAMES.toString();
-        if (StringUtils.isEmpty(request.getParameterIgnoreCase(typeNameParam))) {
-            typeNameParam = OgcEnum.EndPoint.TYPENAME.toString();
+    private void checkTypeNames(MutableHttpServletRequest request, Permission permission) {
+        checkTypeNames(request, permission, OgcException.INVALID_PARAMETER_VALUE);
+    }
+
+    /**
+     * @param code The exception code for a type without permission
+     */
+    private void checkTypeNames(MutableHttpServletRequest request, Permission permission, String code) {
+        Set<String> typeNames = TypeNames.fromRequest(request);
+        if (typeNames.isEmpty()) {
+            // e.g. a stored query: the response interceptor checks the
+            // returned (or locked) features
+            return;
         }
-        return isAllowed(request, typeNameParam, method);
+        String namespace = LayerNames.endpointNamespace(request);
+        Set<String> allowed = getAllowedTypeNames(namespace, permission);
+        for (String typeName : typeNames) {
+            if (!allowed.contains(TypeNames.key(typeName, namespace))) {
+                LOG.debug("No " + permission + " permission on feature type " + TypeNames.display(typeName));
+                forbidLayer(code,
+                    request.getParameterIgnoreCase("typeNames") != null ? "typeNames" : "typeName",
+                    TypeNames.display(typeName));
+            }
+        }
+    }
+
+    /**
+     * @return The keys of the feature types that the user has the permission for
+     */
+    private Set<String> getAllowedTypeNames(String namespace, Permission permission) {
+        List<Layer> layers = new ArrayList<>();
+        for (Layer layer : layerService.findAll()) {
+            // READ is checked by findAll
+            if (permission == Permission.READ || checkForPermission(layer, permission)) {
+                layers.add(layer);
+            }
+        }
+        return FeatureTypes.keys(layers, namespace);
     }
 
     /**
      * check if user has permission on given layer by user or group permissions
-     *
-     * @param layer
-     * @param permission
-     * @return
      */
     private boolean checkForPermission(Layer layer, Permission permission) {
-        Map<User, PermissionCollection> up = layer.getUserPermissions();
-        Map<UserGroup, PermissionCollection> gp = layer.getGroupPermissions();
-        User user = userService.getUserBySession();
-        boolean hasUser = up.containsKey(user);
-        boolean allowedOnUser = false;
-        if (hasUser) {
-            PermissionCollection pc = up.get(user);
-            allowedOnUser = pc.getPermissions().contains(permission) ||
-                pc.getPermissions().contains(Permission.ADMIN);
-        }
-
-        boolean allowedOnGroup = false;
-        Set<UserGroup> groups = user.getUserGroups();
-        if (groups != null) {
-            for (UserGroup group : groups) {
-                if (gp.containsKey(group) && !allowedOnGroup) {
-                    allowedOnGroup = gp.get(group).getPermissions().contains(
-                        permission) || gp.get(group).getPermissions().contains(
-                        Permission.ADMIN);
-                }
-            }
-        }
-        return allowedOnUser || allowedOnGroup;
+        return FeatureTypes.hasPermission(layer, userService.getUserBySession(), permission);
     }
 
 }

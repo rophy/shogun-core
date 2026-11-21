@@ -323,6 +323,60 @@ public class OgcMessage {
     }
 
     /**
+     * @return true for a WFS 2.0 GetPropertyValue request
+     */
+    public boolean isWfsGetPropertyValue() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.GET_PROPERTY_VALUE);
+    }
+
+    /**
+     * @return true for a WFS 2.0 GetFeatureWithLock request
+     */
+    public boolean isWfsGetFeatureWithLock() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.GET_FEATURE_WITH_LOCK);
+    }
+
+    /**
+     * @return true for a WFS 2.0 ListStoredQueries request
+     */
+    public boolean isWfsListStoredQueries() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.LIST_STORED_QUERIES);
+    }
+
+    /**
+     * @return true for a WFS 2.0 DescribeStoredQueries request
+     */
+    public boolean isWfsDescribeStoredQueries() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.DESCRIBE_STORED_QUERIES);
+    }
+
+    /**
+     * @return true for a WFS 2.0 CreateStoredQuery request
+     */
+    public boolean isWfsCreateStoredQuery() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.CREATE_STORED_QUERY);
+    }
+
+    /**
+     * @return true for a WFS 2.0 DropStoredQuery request
+     */
+    public boolean isWfsDropStoredQuery() {
+        return this.isWfs() &&
+            this.getOperation() != null &&
+            this.getOperation().equals(OgcEnum.OperationType.DROP_STORED_QUERY);
+    }
+
+    /**
      * @return
      */
     public boolean isWcsGetCapabilities() {
@@ -374,6 +428,18 @@ public class OgcMessage {
         return this.isWps() &&
             this.getOperation() != null &&
             this.getOperation().equals(OgcEnum.OperationType.EXECUTE);
+    }
+
+    /**
+     * @return true for GeoServer's WPS GetExecutionStatus, GetExecutionResult
+     * and Dismiss requests (asynchronous executions)
+     */
+    public boolean isWpsExecutionOperation() {
+        return this.isWps() &&
+            this.getOperation() != null &&
+            (this.getOperation().equals(OgcEnum.OperationType.GET_EXECUTION_STATUS) ||
+                this.getOperation().equals(OgcEnum.OperationType.GET_EXECUTION_RESULT) ||
+                this.getOperation().equals(OgcEnum.OperationType.DISMISS));
     }
 
     /**

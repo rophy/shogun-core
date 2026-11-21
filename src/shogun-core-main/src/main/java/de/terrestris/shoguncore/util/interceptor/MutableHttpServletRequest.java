@@ -17,7 +17,10 @@ import java.io.*;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import static org.apache.logging.log4j.LogManager.getLogger;
@@ -61,6 +64,11 @@ public class MutableHttpServletRequest extends HttpServletRequestWrapper {
      *
      */
     private ByteArrayOutputStream cachedInputStream;
+
+    /**
+     * Parameters that the XML body of a POST request defines.
+     */
+    private static final Set<String> BODY_FIRST = new HashSet<>(Arrays.asList("SERVICE", "REQUEST", "VERSION"));
 
     /**
      * @param request
@@ -111,6 +119,16 @@ public class MutableHttpServletRequest extends HttpServletRequestWrapper {
 
         String value = StringUtils.EMPTY;
 
+        // as in GeoServer, the XML body of a POST request defines the service,
+        // operation and version, not the query string
+        if ("POST".equalsIgnoreCase(httpServletRequest.getMethod()) && BODY_FIRST.contains(
+            parameter.toUpperCase(Locale.ROOT))) {
+            value = getBodyParameterValue(httpServletRequest, parameter);
+            if (StringUtils.isNotEmpty(value)) {
+                return value;
+            }
+        }
+
         Map<String, String[]> queryParams = httpServletRequest.getParameterMap();
 
         if (!queryParams.isEmpty()) {
@@ -126,59 +144,86 @@ public class MutableHttpServletRequest extends HttpServletRequestWrapper {
                 value = StringUtils.join(params.get(parameter), ",");
             }
 
-        } else {
+        }
 
-            String xml = OgcXmlUtil.getRequestBody(httpServletRequest);
-
-            if (!StringUtils.isEmpty(xml)) {
-
-                LOG.trace("The request contains a POST body.");
-
-                Document document = OgcXmlUtil.getDocumentFromString(xml);
-
-                if (parameter.equalsIgnoreCase(OgcEnum.Service.SERVICE.toString())) {
-                    value = OgcXmlUtil.getPathInDocument(
-                        document, "/*/@service");
-                } else if (parameter.equalsIgnoreCase(OgcEnum.Operation.OPERATION.toString())) {
-                    value = OgcXmlUtil.getPathInDocument(
-                        document, "name(/*)");
-
-                    if (value.contains(":")) {
-                        value = value.split(":")[1];
-                    }
-
-                } else if (Arrays.asList(OgcEnum.EndPoint.getAllValues()).contains(parameter)) {
-                    value = OgcXmlUtil.getPathInDocument(document,
-                        "//TypeName/text() | //TypeNames/text() | //GetCoverage/Identifier/text()");
-                    if (StringUtils.isEmpty(value)) {
-                        value = OgcXmlUtil.getPathInDocument(document,
-                            "//@typeName | //@typeNames");
-                    }
-                    if (StringUtils.isEmpty(value)) {
-                        NodeList nl = OgcXmlUtil.getPathInDocumentAsNodeList(document,
-                            "//Insert/*");
-                        Node node = nl.item(0);
-                        Element e = (Element) node;
-                        if (e != null) {
-                            String namespaceUri = e.getAttribute("xmlns");
-                            if (!StringUtils.isEmpty(namespaceUri)) {
-                                String[] path = namespaceUri.split("/");
-                                String workspace = path[path.length - 1];
-                                value = workspace + ":" + node.getNodeName();
-                            } else {
-                                LOG.error("No namespaceUri found in Insert.");
-                            }
-                        }
-                    }
-                }
-
-            } else {
-                LOG.error("No body found in the request.");
-            }
+        // the parameter map is not empty for XML POST requests with query
+        // parameters (e.g. CUSTOM_ENDPOINT), so read the body if needed
+        if (StringUtils.isEmpty(value) && "POST".equalsIgnoreCase(httpServletRequest.getMethod())) {
+            value = getBodyParameterValue(httpServletRequest, parameter);
         }
 
         LOG.trace("Found the request parameter value: " + value);
 
+        return value;
+    }
+
+    /**
+     * @return The value of the parameter in the XML body (also in a SOAP
+     * envelope), or an empty string
+     */
+    private static String getBodyParameterValue(HttpServletRequest httpServletRequest, String parameter)
+        throws InterceptorException, IOException {
+        String value = StringUtils.EMPTY;
+        String xml = OgcXmlUtil.getRequestBody(httpServletRequest);
+
+        if (!StringUtils.isEmpty(xml) && xml.trim().startsWith("<")) {
+
+            LOG.trace("The request contains a POST body.");
+
+            Document document;
+            try {
+                document = OgcXmlUtil.getDocumentFromString(xml);
+            } catch (IOException e) {
+                // as GeoServer: use the query parameters, GeoServer reports an invalid request
+                LOG.debug("The POST body is not valid XML: " + e.getMessage());
+                return value;
+            }
+            // the request element, also in a SOAP envelope
+            String root = OgcXmlUtil.getPathInDocument(document, "name(/*)").endsWith("Envelope")
+                ? "/*/*[name()='Body' or substring-after(name(),':')='Body']/*" : "/*";
+
+            if (parameter.equalsIgnoreCase(OgcEnum.Service.SERVICE.toString())) {
+                value = OgcXmlUtil.getPathInDocument(
+                    document, root + "/@service");
+            } else if (parameter.equalsIgnoreCase("VERSION")) {
+                value = OgcXmlUtil.getPathInDocument(
+                    document, root + "/@version");
+            } else if (parameter.equalsIgnoreCase(OgcEnum.Operation.OPERATION.toString())) {
+                value = OgcXmlUtil.getPathInDocument(
+                    document, "name(" + root + ")");
+
+                if (value.contains(":")) {
+                    value = value.split(":")[1];
+                }
+
+            } else if (Arrays.asList(OgcEnum.EndPoint.getAllValues()).contains(parameter)) {
+                value = OgcXmlUtil.getPathInDocument(document,
+                    "//TypeName/text() | //TypeNames/text() | //GetCoverage/Identifier/text()");
+                if (StringUtils.isEmpty(value)) {
+                    value = OgcXmlUtil.getPathInDocument(document,
+                        "//@typeName | //@typeNames");
+                }
+                if (StringUtils.isEmpty(value)) {
+                    NodeList nl = OgcXmlUtil.getPathInDocumentAsNodeList(document,
+                        "//Insert/*");
+                    Node node = nl.item(0);
+                    Element e = (Element) node;
+                    if (e != null) {
+                        String namespaceUri = e.getAttribute("xmlns");
+                        if (!StringUtils.isEmpty(namespaceUri)) {
+                            String[] path = namespaceUri.split("/");
+                            String workspace = path[path.length - 1];
+                            value = workspace + ":" + node.getNodeName();
+                        } else {
+                            LOG.debug("No namespaceUri found in Insert.");
+                        }
+                    }
+                }
+            }
+
+        } else {
+            LOG.debug("No XML body found in the request.");
+        }
         return value;
     }
 

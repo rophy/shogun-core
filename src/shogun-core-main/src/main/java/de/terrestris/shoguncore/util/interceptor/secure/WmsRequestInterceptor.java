@@ -2,7 +2,6 @@ package de.terrestris.shoguncore.util.interceptor.secure;
 
 import de.terrestris.shoguncore.dao.LayerDao;
 import de.terrestris.shoguncore.model.layer.Layer;
-import de.terrestris.shoguncore.model.layer.source.ImageWmsLayerDataSource;
 import de.terrestris.shoguncore.service.LayerService;
 import de.terrestris.shoguncore.util.interceptor.GeoserverAuthHeaderRequest;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
@@ -12,7 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import static org.apache.logging.log4j.LogManager.getLogger;
-import java.util.List;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.Set;
 
 /**
  * Interceptor class for WMS requests. Adds basic auth headers based on the GS
@@ -54,8 +56,8 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     @Override
     public MutableHttpServletRequest interceptGetMap(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WMS GetMap request");
-        return isAllowed(request) ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkLayers(request, "layers");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -64,8 +66,9 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     @Override
     public MutableHttpServletRequest interceptGetFeatureInfo(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WMS GetFeatureInfo request");
-        return isAllowed(request) ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkLayers(request, "layers");
+        checkLayers(request, "query_layers");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -74,8 +77,8 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     @Override
     public MutableHttpServletRequest interceptDescribeLayer(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WMS DescribeLayer request");
-        return isAllowed(request) ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkLayers(request, "layers");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -84,8 +87,8 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     @Override
     public MutableHttpServletRequest interceptGetLegendGraphic(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WMS GetLegendGraphic request");
-        return isAllowed(request, "layer") ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkLayers(request, "layer");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -94,8 +97,8 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     @Override
     public MutableHttpServletRequest interceptGetStyles(MutableHttpServletRequest request) {
         LOG.debug("Intercepting WMS GetStyles request");
-        return isAllowed(request) ? new GeoserverAuthHeaderRequest(
-            request, gsUser, gsPass) : forbidRequest(request);
+        checkLayers(request, "layers");
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     /**
@@ -109,40 +112,34 @@ public class WmsRequestInterceptor extends BaseInterceptor implements WmsRequest
     }
 
     /**
-     * Check for read permission on layer by getting it through service
+     * Checks the read permission for each layer in the (comma separated)
+     * parameter. A layer that the user may not read gives the same
+     * LayerNotDefined exception as a layer that does not exist. An empty
+     * parameter is sent to GeoServer, which reports the missing value.
      *
      * @param request The request
-     * @param paramName The optional parameter name for the layer parameter
-     * @return if the layer is allowed to read for current user
+     * @param paramName The parameter name for the layer parameter
      */
-    private boolean isAllowed(MutableHttpServletRequest request,
-        String paramName) {
+    private void checkLayers(MutableHttpServletRequest request, String paramName) {
         String layersParam = request.getParameterIgnoreCase(paramName);
-        List<Layer> all = layerService.findAll();
-        boolean match = false;
-        for (Layer layer : all) {
-            if (layer.getSource() instanceof ImageWmsLayerDataSource) {
-                ImageWmsLayerDataSource source = (ImageWmsLayerDataSource)
-                    layer.getSource();
-                if (source.getLayerNames().equalsIgnoreCase(layersParam) &&
-                    source.getUrl().equalsIgnoreCase(request.getContextPath() +
-                    "/geoserver.action")) {
-                    match = true;
-                    break;
-                }
+        if (StringUtils.isBlank(layersParam)) {
+            return;
+        }
+        String namespace = LayerNames.endpointNamespace(request);
+        Set<String> allowed = getAllowedLayerNames(request, namespace);
+        for (String name : layersParam.split(",")) {
+            if (StringUtils.isBlank(name)) {
+                continue;
+            }
+            if (!allowed.contains(LayerNames.key(name, namespace))) {
+                forbidLayer(OgcException.LAYER_NOT_DEFINED, paramName, name.trim());
             }
         }
-        return match;
     }
 
-    /**
-     * Calls main method with default "layers" parameter
-     *
-     * @param request The request
-     * @return If the layer is allowed to read for current user
-     */
-    private boolean isAllowed(MutableHttpServletRequest request) {
-        return isAllowed(request, "layers");
+    private Set<String> getAllowedLayerNames(MutableHttpServletRequest request, String namespace) {
+        return LayerNames.wmsLayerKeys(layerService.findAll(), request.getContextPath() + "/geoserver.action",
+            namespace);
     }
 
 }

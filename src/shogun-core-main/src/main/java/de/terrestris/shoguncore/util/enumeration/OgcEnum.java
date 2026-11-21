@@ -46,6 +46,13 @@ public class OgcEnum {
         wfsOps.add(OperationType.GET_FEATURE);
         wfsOps.add(OperationType.LOCK_FEATURE);
         wfsOps.add(OperationType.TRANSACTION);
+        // WFS 2.0
+        wfsOps.add(OperationType.GET_PROPERTY_VALUE);
+        wfsOps.add(OperationType.GET_FEATURE_WITH_LOCK);
+        wfsOps.add(OperationType.LIST_STORED_QUERIES);
+        wfsOps.add(OperationType.DESCRIBE_STORED_QUERIES);
+        wfsOps.add(OperationType.CREATE_STORED_QUERY);
+        wfsOps.add(OperationType.DROP_STORED_QUERY);
 
         Set<OperationType> wcsOps = new HashSet<OperationType>();
         wcsOps.add(OperationType.GET_CAPABILITIES);
@@ -56,6 +63,10 @@ public class OgcEnum {
         wpsOps.add(OperationType.GET_CAPABILITIES);
         wpsOps.add(OperationType.EXECUTE);
         wpsOps.add(OperationType.DESCRIBE_PROCESS);
+        // GeoServer: status and result of asynchronous executions
+        wpsOps.add(OperationType.GET_EXECUTION_STATUS);
+        wpsOps.add(OperationType.GET_EXECUTION_RESULT);
+        wpsOps.add(OperationType.DISMISS);
 
         Set<OperationType> w3dsOps = new HashSet<OperationType>();
         w3dsOps.add(OperationType.GET_CAPABILITIES);
@@ -404,10 +415,19 @@ public class OgcEnum {
         GET_FEATURE("GetFeature"),
         LOCK_FEATURE("LockFeature"),
         TRANSACTION("Transaction"),
+        GET_PROPERTY_VALUE("GetPropertyValue"),
+        GET_FEATURE_WITH_LOCK("GetFeatureWithLock"),
+        LIST_STORED_QUERIES("ListStoredQueries"),
+        DESCRIBE_STORED_QUERIES("DescribeStoredQueries"),
+        CREATE_STORED_QUERY("CreateStoredQuery"),
+        DROP_STORED_QUERY("DropStoredQuery"),
         DESCRIBE_COVERAGE("DescribeCoverage"),
         GET_COVERAGE("GetCoverage"),
         EXECUTE("Execute"),
         DESCRIBE_PROCESS("DescribeProcess"),
+        GET_EXECUTION_STATUS("GetExecutionStatus"),
+        GET_EXECUTION_RESULT("GetExecutionResult"),
+        DISMISS("Dismiss"),
         GET_SCENE("GetScene"),
         GET_LAYER_INFO("GetLayerInfo"),
         GET_TILE("GetTile");

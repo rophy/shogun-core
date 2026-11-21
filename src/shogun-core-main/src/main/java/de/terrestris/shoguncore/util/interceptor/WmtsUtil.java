@@ -2,7 +2,10 @@ package de.terrestris.shoguncore.util.interceptor;
 
 import org.apache.logging.log4j.Logger;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.apache.logging.log4j.LogManager.getLogger;
@@ -19,6 +22,52 @@ public class WmtsUtil {
     private static final Logger LOG = getLogger(WmtsUtil.class);
 
     /**
+     * The path of GeoServer's RESTful WMTS.
+     */
+    public static final String REST_PATH = "/gwc/service/wmts/rest/";
+
+    /**
+     * A RESTful WMTS request through the interceptor, e.g.
+     * /geoserver.action/{endpoint}/gwc/service/wmts/rest/{layer}/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}
+     */
+    private static final Pattern PROXIED_REST_PATTERN =
+        Pattern.compile(".*/geoserver\\.action/[^/]+" + Pattern.quote(REST_PATH) + "(.*)");
+
+    private static final int TILE_SEGMENTS = 6;
+
+    private static final int FEATURE_INFO_SEGMENTS = 8;
+
+    /**
+     * @return The path after {@link #REST_PATH} of a RESTful WMTS request
+     * through the interceptor, or null
+     */
+    public static String getProxiedRestPath(MutableHttpServletRequest mutableRequest) {
+        Matcher matcher = PROXIED_REST_PATTERN.matcher(mutableRequest.getRequestURL().toString());
+        return matcher.matches() ? matcher.group(1) : null;
+    }
+
+    /**
+     * @return The (decoded) layer name of a RESTful WMTS request through the
+     * interceptor, or null
+     */
+    public static String getProxiedRestLayer(MutableHttpServletRequest mutableRequest) {
+        String path = getProxiedRestPath(mutableRequest);
+        if (path == null) {
+            return null;
+        }
+        try {
+            return URLDecoder.decode(path.split("/")[0], "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        }
+    }
+
+    private static int proxiedRestSegments(MutableHttpServletRequest mutableRequest) {
+        String path = getProxiedRestPath(mutableRequest);
+        return path == null ? 0 : path.split("/").length;
+    }
+
+    /**
      * Check if given request is a RESTful WMTS call
      * @param mutableRequest
      * @return
@@ -28,7 +77,7 @@ public class WmtsUtil {
         // check for presence of tilematrixset, tilematrix, tilecol and tilerow
         boolean defaultRestfulRequest = Pattern.compile("[^\\/]*\\/[^\\/]*[^\\/]\\/\\d+\\/\\d+").matcher(url).find();
         boolean isWmtsUrl = Pattern.compile(".*/geoserver.action/.*/wmts/\\d+/(.*)").matcher(url).matches();
-        return defaultRestfulRequest && isWmtsUrl;
+        return (defaultRestfulRequest && isWmtsUrl) || getProxiedRestPath(mutableRequest) != null;
     }
 
     /**
@@ -39,6 +88,9 @@ public class WmtsUtil {
     public static boolean isRestfulWmtsGetFeatureinfo(MutableHttpServletRequest mutableRequest) {
         if (!isRestfulWmtsRequest(mutableRequest)) {
             return false;
+        }
+        if (getProxiedRestPath(mutableRequest) != null) {
+            return proxiedRestSegments(mutableRequest) == FEATURE_INFO_SEGMENTS;
         }
         String url = mutableRequest.getRequestURL().toString();
         // weak test if we have at least 4 digits in the path for tilecol, tilerow, i and j
@@ -54,6 +106,9 @@ public class WmtsUtil {
     public static boolean isRestfulWmtsGetTile(MutableHttpServletRequest mutableRequest) {
         if (!isRestfulWmtsRequest(mutableRequest)) {
             return false;
+        }
+        if (getProxiedRestPath(mutableRequest) != null) {
+            return proxiedRestSegments(mutableRequest) == TILE_SEGMENTS;
         }
         String url = mutableRequest.getRequestURL().toString();
         String format = mutableRequest.getParameterIgnoreCase("format");

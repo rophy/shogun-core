@@ -1,10 +1,7 @@
 package de.terrestris.shoguncore.util.interceptor.secure;
 
-import de.terrestris.shoguncore.util.application.ShogunCoreContextUtil;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
-
-import java.net.URI;
-import java.net.URISyntaxException;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
 
 /**
  * <p>BaseInterceptor class.</p>
@@ -12,35 +9,26 @@ import java.net.URISyntaxException;
 public class BaseInterceptor {
 
     /**
-     *
-     */
-    private URI appUri = null;
-
-    /**
-     * <p>forbidRequest.</p>
+     * Refuses the request. The client gets an OGC exception report.
      *
      * @param request a {@link de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest} object.
-     * @return a {@link de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest} object.
+     * @return never returns
      */
     protected MutableHttpServletRequest forbidRequest(MutableHttpServletRequest request) {
-        this.setAppUriFromRequest(request);
-        String redirectUri = appUri == null ? "" : appUri.toString();
-        request.setRequestURI(redirectUri + "/response/forbidden.action");
-        return request;
+        throw new OgcException(OgcException.NO_APPLICABLE_CODE, null, "Access denied.");
     }
 
     /**
-     * <p>setAppUriFromRequest.</p>
+     * Refuses a request for a layer that does not exist or that the user may
+     * not read. Both cases give the same error, so that the response does not
+     * show which layers exist.
      *
-     * @param request a {@link de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest} object.
+     * @param code The exception code (e.g. LayerNotDefined)
+     * @param locator The parameter name
+     * @param name The layer name
+     * @return never returns
      */
-    protected void setAppUriFromRequest(MutableHttpServletRequest request) {
-        if (appUri == null) {
-            try {
-                appUri = ShogunCoreContextUtil.getApplicationURIFromRequest(request);
-            } catch (URISyntaxException e) {
-                // pass
-            }
-        }
+    protected MutableHttpServletRequest forbidLayer(String code, String locator, String name) {
+        throw new OgcException(code, locator, "Unknown layer: " + name);
     }
 }

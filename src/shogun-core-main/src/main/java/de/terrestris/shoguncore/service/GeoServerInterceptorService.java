@@ -118,9 +118,11 @@ public class GeoServerInterceptorService {
 
         List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
 
+        // keep repeated parameters (e.g. WCS 2.0 SUBSET) as separate parameters
         for (Entry<String, String[]> param : params.entrySet()) {
-            queryParams.add(new BasicNameValuePair(param.getKey(),
-                StringUtils.join(param.getValue(), ",")));
+            for (String value : param.getValue()) {
+                queryParams.add(new BasicNameValuePair(param.getKey(), value));
+            }
         }
 
         return queryParams;
@@ -409,6 +411,81 @@ public class GeoServerInterceptorService {
             mutableRequest.addParameter("CONTEXT_PATH", request.getContextPath());
         }
 
+        try {
+            return interceptGeoServerRequest(mutableRequest);
+        } catch (OgcException e) {
+            throw e.forRequest(getRequestService(mutableRequest), getRequestVersion(mutableRequest))
+                .withParameters(mutableRequest.getParameterMap());
+        } catch (InterceptorException | IOException e) {
+            throw new OgcException(OgcException.NO_APPLICABLE_CODE, null, e.getMessage())
+                .forRequest(getRequestService(mutableRequest), getRequestVersion(mutableRequest))
+                .withParameters(mutableRequest.getParameterMap());
+        }
+    }
+
+    /**
+     * @return The SERVICE of the request, or the service that the REQUEST
+     * operation belongs to if SERVICE is not given.
+     */
+    private static String getRequestService(MutableHttpServletRequest request) {
+        try {
+            String service = MutableHttpServletRequest.getRequestParameterValue(
+                request, OgcEnum.Service.SERVICE.toString());
+            if (StringUtils.isEmpty(service)) {
+                service = inferService(MutableHttpServletRequest.getRequestParameterValue(
+                    request, OgcEnum.Operation.OPERATION.toString()));
+            }
+            if (ServiceType.fromString(service) == null && "POST".equalsIgnoreCase(request.getMethod())
+                && StringUtils.contains(OgcXmlUtil.getRequestBody(request), "http://www.opengis.net/wcs/2.0")) {
+                // a WCS 2.0 XML request with a wrong service value gets a WCS report
+                service = ServiceType.WCS.toString();
+            }
+            return service;
+        } catch (InterceptorException | IOException e) {
+            return null;
+        }
+    }
+
+    private static String getRequestVersion(MutableHttpServletRequest request) {
+        try {
+            String version = MutableHttpServletRequest.getRequestParameterValue(request, "VERSION");
+            if (StringUtils.isEmpty(version)) {
+                version = MutableHttpServletRequest.getRequestParameterValue(request, "ACCEPTVERSIONS");
+            }
+            if (StringUtils.isEmpty(version) && "POST".equalsIgnoreCase(request.getMethod())) {
+                // XML GetCapabilities: <ows:AcceptVersions><ows:Version>
+                String body = OgcXmlUtil.getRequestBody(request);
+                Matcher matcher = Pattern.compile("<(?:\\w+:)?Version>\\s*([^<\\s]+)").matcher(
+                    StringUtils.defaultString(body));
+                if (matcher.find()) {
+                    version = matcher.group(1);
+                }
+            }
+            return version;
+        } catch (InterceptorException | IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * @param operation The REQUEST value
+     * @return The only service that has this operation, or null
+     */
+    private static String inferService(String operation) {
+        OperationType type = OperationType.fromString(operation);
+        if (type == null) {
+            return null;
+        }
+        Set<ServiceType> services = OgcEnum.SERVICETYPES_BY_OPERATION.get(type);
+        if (services == null || services.size() != 1) {
+            return null;
+        }
+        return services.iterator().next().toString();
+    }
+
+    private Response interceptGeoServerRequest(MutableHttpServletRequest mutableRequest)
+        throws InterceptorException, URISyntaxException, HttpException, IOException {
+
         // get the OGC message information (service, request, endPoint)
         OgcMessage message = getOgcMessage(mutableRequest);
 
@@ -493,6 +570,16 @@ public class GeoServerInterceptorService {
                 mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
         }
 
+        // the endpoint of the URL path (/geoserver.action/{endpoint}) routes the
+        // request if the layer names do not name a known namespace, e.g. for
+        // unqualified layer names of a workspace bound service
+        String customEndPoint = MutableHttpServletRequest.getRequestParameterValue(
+            mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
+        if (StringUtils.isNotEmpty(customEndPoint) && namespaceBoundUrl
+            && !geoServerNameSpaces.containsKey(StringUtils.defaultString(getGeoServerNameSpace(requestEndPoint)))) {
+            requestEndPoint = customEndPoint;
+        }
+
         // check for RESTful WMTS request
         if (StringUtils.isEmpty(requestService) && StringUtils.isEmpty(requestOperation)) {
             if (WmtsUtil.isRestfulWmtsRequest(mutableRequest)) {
@@ -505,6 +592,38 @@ public class GeoServerInterceptorService {
                     requestOperation = OperationType.GET_CAPABILITIES.toString();
                 }
             }
+        }
+
+        // SERVICE is optional for operations that only one service has
+        // (e.g. GetMap), as in GeoServer
+        if (StringUtils.isEmpty(requestService) && StringUtils.isNotEmpty(requestOperation)
+            && StringUtils.isNotEmpty(requestEndPoint)) {
+            requestService = inferService(requestOperation);
+            if (StringUtils.isEmpty(requestService)) {
+                throw new OgcException(OgcException.MISSING_PARAMETER_VALUE, "service",
+                    "The SERVICE parameter is missing.");
+            }
+            // GeoServer OWS endpoints need the SERVICE parameter
+            mutableRequest.setParameter("SERVICE", requestService);
+        }
+
+        if (StringUtils.isEmpty(requestOperation) && StringUtils.isNotEmpty(requestService)
+            && StringUtils.isNotEmpty(requestEndPoint)) {
+            throw new OgcException(OgcException.MISSING_PARAMETER_VALUE, "request",
+                "The REQUEST parameter is missing.");
+        }
+
+        if (StringUtils.isNotEmpty(requestService) && OgcEnum.ServiceType.fromString(requestService) == null) {
+            throw new OgcException(OgcException.INVALID_PARAMETER_VALUE, "service",
+                "The service '" + requestService + "' is not supported.");
+        }
+
+        if (StringUtils.isNotEmpty(requestOperation) && OgcEnum.OperationType.fromString(requestOperation) == null) {
+            // WMS has an own code, OWS Common services use InvalidParameterValue
+            String code = "WMS".equalsIgnoreCase(requestService) ? OgcException.OPERATION_NOT_SUPPORTED
+                : OgcException.INVALID_PARAMETER_VALUE;
+            throw new OgcException(code, "request",
+                "The operation '" + requestOperation + "' is not supported.");
         }
 
         if (StringUtils.isEmpty(requestService) ||

@@ -211,20 +211,7 @@ public class OgcMessageDistributor {
 
             LOG.debug(infoMsg);
 
-            // Note: WFS 2.0.0 operations are not supported yet!
-            if (message.isWfsGetCapabilities()) {
-                request = this.wfsRequestInterceptor.interceptGetCapabilities(request);
-            } else if (message.isWfsGetFeature()) {
-                request = this.wfsRequestInterceptor.interceptGetFeature(request);
-            } else if (message.isWfsDescribeFeatureType()) {
-                request = this.wfsRequestInterceptor.interceptDescribeFeatureType(request);
-            } else if (message.isWfsTransaction()) {
-                request = this.wfsRequestInterceptor.interceptTransaction(request);
-            } else if (message.isWfsLockFeature()) {
-                request = this.wfsRequestInterceptor.interceptLockFeature(request);
-            } else {
-                throw new InterceptorException(operationErrMsg);
-            }
+            request = distributeToWfsRequestInterceptor(request, message, operationErrMsg);
 
         } else if (message.isWcs()) {
 
@@ -258,7 +245,7 @@ public class OgcMessageDistributor {
                 request = this.wpsRequestInterceptor.interceptGetCapabilities(request);
             } else if (message.isWpsDescribeProcess()) {
                 request = this.wpsRequestInterceptor.interceptDescribeProcess(request);
-            } else if (message.isWpsExecute()) {
+            } else if (message.isWpsExecute() || message.isWpsExecutionOperation()) {
                 request = this.wpsRequestInterceptor.interceptExecute(request);
             } else {
                 throw new InterceptorException(operationErrMsg);
@@ -277,6 +264,36 @@ public class OgcMessageDistributor {
 
         return request;
 
+    }
+
+    private MutableHttpServletRequest distributeToWfsRequestInterceptor(MutableHttpServletRequest request,
+        OgcMessage message, String operationErrMsg) throws InterceptorException {
+        if (message.isWfsGetCapabilities()) {
+            request = this.wfsRequestInterceptor.interceptGetCapabilities(request);
+        } else if (message.isWfsGetFeature()) {
+            request = this.wfsRequestInterceptor.interceptGetFeature(request);
+        } else if (message.isWfsDescribeFeatureType()) {
+            request = this.wfsRequestInterceptor.interceptDescribeFeatureType(request);
+        } else if (message.isWfsTransaction()) {
+            request = this.wfsRequestInterceptor.interceptTransaction(request);
+        } else if (message.isWfsLockFeature()) {
+            request = this.wfsRequestInterceptor.interceptLockFeature(request);
+        } else if (message.isWfsGetPropertyValue()) {
+            request = this.wfsRequestInterceptor.interceptGetPropertyValue(request);
+        } else if (message.isWfsGetFeatureWithLock()) {
+            request = this.wfsRequestInterceptor.interceptGetFeatureWithLock(request);
+        } else if (message.isWfsListStoredQueries()) {
+            request = this.wfsRequestInterceptor.interceptListStoredQueries(request);
+        } else if (message.isWfsDescribeStoredQueries()) {
+            request = this.wfsRequestInterceptor.interceptDescribeStoredQueries(request);
+        } else if (message.isWfsCreateStoredQuery()) {
+            request = this.wfsRequestInterceptor.interceptCreateStoredQuery(request);
+        } else if (message.isWfsDropStoredQuery()) {
+            request = this.wfsRequestInterceptor.interceptDropStoredQuery(request);
+        } else {
+            throw new InterceptorException(operationErrMsg);
+        }
+        return request;
     }
 
     /**
@@ -363,7 +380,6 @@ public class OgcMessageDistributor {
 
             LOG.debug(infoMsg);
 
-            // Note: WFS 2.0.0 operations are not supported yet!
             if (message.isWfsGetCapabilities()) {
                 response = this.wfsResponseInterceptor.interceptGetCapabilities(mutableRequest, response);
             } else if (message.isWfsGetFeature()) {
@@ -374,6 +390,13 @@ public class OgcMessageDistributor {
                 response = this.wfsResponseInterceptor.interceptTransaction(mutableRequest, response);
             } else if (message.isWfsLockFeature()) {
                 response = this.wfsResponseInterceptor.interceptLockFeature(mutableRequest, response);
+            } else if (message.isWfsGetPropertyValue()) {
+                response = this.wfsResponseInterceptor.interceptGetPropertyValue(mutableRequest, response);
+            } else if (message.isWfsGetFeatureWithLock()) {
+                response = this.wfsResponseInterceptor.interceptGetFeatureWithLock(mutableRequest, response);
+            } else if (message.isWfsListStoredQueries() || message.isWfsDescribeStoredQueries()
+                || message.isWfsCreateStoredQuery() || message.isWfsDropStoredQuery()) {
+                response = this.wfsResponseInterceptor.interceptStoredQueryOperation(mutableRequest, response);
             } else {
                 throw new InterceptorException(operationErrMsg);
             }
@@ -412,7 +435,7 @@ public class OgcMessageDistributor {
                 response = this.wpsResponseInterceptor.interceptGetCapabilities(mutableRequest, response);
             } else if (message.isWpsDescribeProcess()) {
                 response = this.wpsResponseInterceptor.interceptDescribeProcess(mutableRequest, response);
-            } else if (message.isWpsExecute()) {
+            } else if (message.isWpsExecute() || message.isWpsExecutionOperation()) {
                 response = this.wpsResponseInterceptor.interceptExecute(mutableRequest, response);
             } else {
                 throw new InterceptorException(operationErrMsg);

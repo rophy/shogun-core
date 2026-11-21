@@ -7,7 +7,6 @@ import de.terrestris.shoguncore.service.LayerService;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
 import de.terrestris.shoguncore.util.interceptor.WmsResponseInterceptorInterface;
 import de.terrestris.shoguncore.util.model.Response;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
@@ -20,16 +19,10 @@ import org.w3c.dom.NodeList;
 
 import javax.transaction.Transactional;
 import javax.xml.namespace.NamespaceContext;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.*;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 
 import static org.apache.logging.log4j.LogManager.getLogger;
@@ -43,6 +36,8 @@ import static org.apache.logging.log4j.LogManager.getLogger;
 public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
 
     private static final Logger LOG = getLogger(WmsResponseInterceptor.class);
+
+    private static final String XLINK = "http://www.w3.org/1999/xlink";
 
     /**
      *
@@ -63,56 +58,25 @@ public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
     @Transactional(value = Transactional.TxType.REQUIRED)
     public Response interceptGetCapabilities(MutableHttpServletRequest request, Response response) {
         String endpoint = request.getParameterIgnoreCase("CUSTOM_ENDPOINT");
-        if (endpoint == null) {
-            return null;
-        }
 
         // get all layers allowed for this user in order to filter out not allowed ones
-        List<Layer> layers = layerService.findAll();
         List<String> layerNames = new ArrayList<String>();
-        for (Layer layer : layers) {
+        for (Layer layer : layerService.findAll()) {
             if (layer.getSource() instanceof ImageWmsLayerDataSource) {
                 ImageWmsLayerDataSource source = (ImageWmsLayerDataSource) layer.getSource();
                 layerNames.add(source.getLayerNames());
             }
         }
 
-        byte[] body = response.getBody();
-        try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(new ByteArrayInputStream(body));
-            Element root = doc.getDocumentElement();
-            String version = root.getAttribute("version");
-            String proto = request.getHeader("x-forwarded-proto");
-            String host = request.getHeader("x-forwarded-host");
-            if (StringUtils.isEmpty(proto)) {
-                proto = request.getScheme();
-            }
-            if (StringUtils.isEmpty(host)) {
-                host = request.getServerName();
-            }
-            String baseUrl = proto + "://" + host + request.getParameter("CONTEXT_PATH") + "/geoserver.action/" + endpoint;
-            if (version.equals("1.3.0")) {
-                removeLayers(doc, "http://www.opengis.net/wms", layerNames);
-                updateUrls(doc, "http://www.opengis.net/wms", baseUrl);
-            } else {
-                removeLayers(doc, "", layerNames);
-                updateUrls(doc, "", baseUrl);
-            }
-            Transformer transformer = TransformerFactory.newInstance().newTransformer();
-            DOMSource source = new DOMSource(doc);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            StreamResult result = new StreamResult(bos);
-            transformer.transform(source, result);
-            response.setBody(bos.toByteArray());
-        } catch (Throwable e) {
-            LOG.warn("Something went wrong when intercepting a get capabilities response: " + e.getMessage());
-            LOG.trace("Stack trace", e);
-            return null;
-        }
-        return response;
+        String baseUrl = ProxyUrls.baseUrl(request, endpoint);
+        String geoServerUri = request.getRequestURI();
+        String namespace = LayerNames.endpointNamespace(request);
+        return CapabilitiesFilter.filter(response, doc -> {
+            String version = doc.getDocumentElement().getAttribute("version");
+            String ns = version.equals("1.3.0") ? "http://www.opengis.net/wms" : "";
+            removeLayers(doc, ns, layerNames, namespace);
+            updateUrls(doc, ns, geoServerUri, baseUrl);
+        });
     }
 
     /**
@@ -163,14 +127,14 @@ public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
      * @param layerNames The layerNames to keep
      * @throws XPathExpressionException
      */
-    @SuppressFBWarnings("UC_USELESS_OBJECT")
-    private void removeLayers(Document doc, String namespace, List<String> layerNames) throws XPathExpressionException {
-        List<String> unqualifiedLayerNames = new ArrayList<String>();
-        for (String name : layerNames) {
-            if (name.contains(":")) {
-                unqualifiedLayerNames.add(name.split(":")[1]);
-            } else {
-                unqualifiedLayerNames.add(name);
+    private void removeLayers(Document doc, String namespace, List<String> layerNames, String endpointNamespace)
+        throws XPathExpressionException {
+        Set<String> allowed = new HashSet<>();
+        for (String names : layerNames) {
+            if (names != null) {
+                for (String name : names.split(",")) {
+                    allowed.add(LayerNames.key(name, endpointNamespace));
+                }
             }
         }
         XPathFactory factory = XPathFactory.newInstance();
@@ -183,25 +147,8 @@ public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
         List<Element> toRemove = new ArrayList<>();
         for (int i = 0; i < nodeList.getLength(); ++i) {
             Element name = (Element) nodeList.item(i);
-            String str = name.getTextContent();
-            if (!unqualifiedLayerNames.contains(str)) {
+            if (!allowed.contains(LayerNames.key(name.getTextContent(), endpointNamespace))) {
                 toRemove.add((Element) name.getParentNode());
-            } else {
-                String nodeLayerName = name.getTextContent();
-                for (int j = 0; j < layerNames.size(); j++) {
-                    String qualifiedLayerName = layerNames.get(j);
-                    if (qualifiedLayerName.contains(":")) {
-                        String layerNamespace = qualifiedLayerName.split(":")[0];
-                        String unqualifiedLayerName = qualifiedLayerName.split(":")[1];
-                        if (nodeLayerName.equals(unqualifiedLayerName)) {
-                            name.setTextContent(layerNamespace + ":" + name.getTextContent());
-                        }
-                    } else {
-                        if (nodeLayerName.equals(qualifiedLayerName)) {
-                            name.setTextContent(name.getTextContent());
-                        }
-                    }
-                }
             }
         }
         toRemove.forEach(element -> element.getParentNode().removeChild(element));
@@ -215,7 +162,8 @@ public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
      * @param baseUrl The baseUrl
      * @throws XPathExpressionException
      */
-    private void updateUrls(Document doc, String namespace, String baseUrl) throws XPathExpressionException {
+    private void updateUrls(Document doc, String namespace, String geoServerUri, String baseUrl)
+        throws XPathExpressionException {
         XPathFactory factory = XPathFactory.newInstance();
         XPath xpath = factory.newXPath();
         NamespaceContext nscontext = CommonNamespaces.getNamespaceContext();
@@ -225,14 +173,10 @@ public class WmsResponseInterceptor implements WmsResponseInterceptorInterface {
         NodeList nodeList = (NodeList) expr.evaluate(doc, XPathConstants.NODESET);
         for (int i = 0; i < nodeList.getLength(); ++i) {
             Element link = (Element) nodeList.item(i);
-            String url = link.getAttributeNS("http://www.w3.org/1999/xlink", "xlink:href");
-            int index = url.indexOf("?");
-            if (index > -1) {
-                url = url.substring(index);
-                url = baseUrl + url;
-                link.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", url);
-            } else {
-                link.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", baseUrl);
+            String url = link.getAttributeNS(XLINK, "href");
+            String newUrl = ProxyUrls.rewrite(url, geoServerUri, baseUrl);
+            if (!StringUtils.equals(url, newUrl)) {
+                link.setAttributeNS(XLINK, "xlink:href", newUrl);
             }
         }
     }

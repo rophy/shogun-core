@@ -3,12 +3,14 @@ package de.terrestris.shoguncore.web;
 import de.terrestris.shoguncore.service.GeoServerInterceptorService;
 import de.terrestris.shoguncore.util.data.ResultSet;
 import de.terrestris.shoguncore.util.interceptor.InterceptorException;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
 import de.terrestris.shoguncore.util.model.Response;
 import org.apache.http.HttpException;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
@@ -77,10 +80,25 @@ public class GeoServerInterceptorController<S extends GeoServerInterceptorServic
     /**
      * @param request
      */
+    public ResponseEntity<?> interceptGeoServerRequest(
+        HttpServletRequest request,
+        @PathVariable(value = "endpoint", required = false) Optional<String> endpoint
+    ) {
+        return interceptGeoServerRequest(request, null, endpoint);
+    }
+
+    /**
+     * @param request The request
+     * @param servletResponse The response. If set, responses with a content
+     * type that Spring cannot parse (e.g. application/vnd.ogc.gml/3.1.1) are
+     * written to it directly.
+     * @param endpoint The endpoint of the URL path
+     */
     @RequestMapping(value = {"/geoserver.action", "/geoserver.action/{endpoint}/**"}, method = {
         RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<?> interceptGeoServerRequest(
         HttpServletRequest request,
+        HttpServletResponse servletResponse,
         @PathVariable(value = "endpoint", required = false) Optional<String> endpoint
     ) {
         HttpHeaders responseHeaders = new HttpHeaders();
@@ -99,9 +117,17 @@ public class GeoServerInterceptorController<S extends GeoServerInterceptorServic
 
             LOG.trace("Successfully intercepted a GeoServer resource.");
 
+            if (servletResponse != null && !isValidContentType(responseHeaders)) {
+                writeDirectly(servletResponse, responseStatus, responseHeaders, responseBody);
+                return null;
+            }
+
             return new ResponseEntity<>(responseBody,
                 responseHeaders, responseStatus);
 
+        } catch (OgcException e) {
+            LOG.info(ERROR_MESSAGE + e.getCode() + ": " + e.getMessage());
+            return e.toResponseEntity();
         } catch (NullPointerException | IOException | InterceptorException | HttpException | URISyntaxException e) {
             LOG.error(ERROR_MESSAGE + e.getMessage());
 
@@ -113,6 +139,25 @@ public class GeoServerInterceptorController<S extends GeoServerInterceptorServic
             return new ResponseEntity<>(responseMsg, responseHeaders, responseStatus);
         }
 
+    }
+
+    private static boolean isValidContentType(HttpHeaders headers) {
+        try {
+            headers.getContentType();
+            return true;
+        } catch (InvalidMediaTypeException e) {
+            return false;
+        }
+    }
+
+    private static void writeDirectly(HttpServletResponse servletResponse, HttpStatus status,
+                                      HttpHeaders headers, byte[] body) throws IOException {
+        servletResponse.setStatus(status.value());
+        headers.forEach((name, values) -> values.forEach(value -> servletResponse.addHeader(name, value)));
+        if (body != null) {
+            servletResponse.getOutputStream().write(body);
+        }
+        servletResponse.flushBuffer();
     }
 
     /**

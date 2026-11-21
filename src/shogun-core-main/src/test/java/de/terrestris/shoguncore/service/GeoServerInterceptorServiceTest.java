@@ -7,6 +7,7 @@ import de.terrestris.shoguncore.util.enumeration.InterceptorEnum;
 import de.terrestris.shoguncore.util.enumeration.OgcEnum;
 import de.terrestris.shoguncore.util.http.HttpUtil;
 import de.terrestris.shoguncore.util.interceptor.InterceptorException;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
 import de.terrestris.shoguncore.util.interceptor.OgcMessage;
 import de.terrestris.shoguncore.util.interceptor.OgcMessageDistributor;
@@ -70,7 +71,7 @@ public class GeoServerInterceptorServiceTest {
         gsInterceptorService.setGeoServerNameSpaces(geoServerNameSpaces);
     }
 
-    @Test(expected = InterceptorException.class)
+    @Test(expected = OgcException.class)
     public void test_throws_on_non_ogc_request() throws InterceptorException,
         URISyntaxException, HttpException, IOException {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
