@@ -24,6 +24,7 @@
         <!-- Users -->
         <ref bean="adminUser"/>
         <ref bean="defaultUser"/>
+        <ref bean="limitedUser"/>
 
         <!-- UserGroups -->
         <ref bean="adminUserGroup"/>
@@ -80,6 +81,8 @@
         <ref bean="defaultWCSResponseInterceptorRule" />
         <ref bean="defaultWPSRequestInterceptorRule" />
         <ref bean="defaultWPSResponseInterceptorRule" />
+        <ref bean="defaultCSWRequestInterceptorRule" />
+        <ref bean="defaultCSWResponseInterceptorRule" />
 
         <!-- Applications -->
         <ref bean="defaultApplication"/>
@@ -118,6 +121,21 @@
         <property name="active" value="true"/>
         <property name="roles">
             <util:set id="defaultUserRoles">
+                <ref bean="userRole"/>
+            </util:set>
+        </property>
+    </bean>
+
+    <!-- A user with READ on some compliance layers only (compliance.limitedLayers),
+         for the permission checks of check-ows.py -->
+    <bean id="limitedUser" class="de.terrestris.shoguncore.model.User">
+        <property name="firstName" value="Limited"/>
+        <property name="lastName" value="User"/>
+        <property name="accountName" value="limited"/>
+        <property name="password" value="limited"/>
+        <property name="active" value="true"/>
+        <property name="roles">
+            <util:set id="limitedUserRoles">
                 <ref bean="userRole"/>
             </util:set>
         </property>
@@ -614,6 +632,18 @@
         <property name="event" value="RESPONSE"/>
         <property name="rule" value="MODIFY"/>
         <property name="service" value="WPS"/>
+    </bean>
+
+    <bean id="defaultCSWRequestInterceptorRule" class="de.terrestris.shoguncore.model.interceptor.InterceptorRule">
+        <property name="event" value="REQUEST"/>
+        <property name="rule" value="MODIFY"/>
+        <property name="service" value="CSW"/>
+    </bean>
+
+    <bean id="defaultCSWResponseInterceptorRule" class="de.terrestris.shoguncore.model.interceptor.InterceptorRule">
+        <property name="event" value="RESPONSE"/>
+        <property name="rule" value="MODIFY"/>
+        <property name="service" value="CSW"/>
     </bean>
 
 </beans>

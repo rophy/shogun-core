@@ -18,6 +18,7 @@ import de.terrestris.shoguncore.model.layer.source.ImageWmsLayerDataSource;
 import de.terrestris.shoguncore.model.layer.source.WmtsLayerDataSource;
 import de.terrestris.shoguncore.model.security.Permission;
 import de.terrestris.shoguncore.model.security.PermissionCollection;
+import de.terrestris.shoguncore.model.wps.WpsProcess;
 import de.terrestris.shoguncore.service.InitializationService;
 
 /**
@@ -39,6 +40,19 @@ public class ProjectContentInitializer extends ContentInitializer {
     private User testUser;
 
     @Autowired
+    @Qualifier("limitedUser")
+    private User limitedUser;
+
+    @Value("${compliance.limitedLayers:}")
+    private String[] limitedLayerNames;
+
+    @Value("${compliance.wpsProcesses:}")
+    private String[] wpsProcesses;
+
+    @Value("${compliance.limitedWpsProcesses:}")
+    private String[] limitedWpsProcesses;
+
+    @Autowired
     @Qualifier("initializationService")
     private InitializationService initializationService;
 
@@ -57,6 +71,7 @@ public class ProjectContentInitializer extends ContentInitializer {
                     createWmtsLayer(name);
                 }
             }
+            createWpsProcesses();
         }
     }
 
@@ -98,8 +113,53 @@ public class ProjectContentInitializer extends ContentInitializer {
 
         Map<User, PermissionCollection> permissions = new HashMap<>();
         permissions.put(testUser, read);
+        if (isLimitedLayer(source.getName())) {
+            PermissionCollection limitedRead = new PermissionCollection();
+            limitedRead.setPermissions(new HashSet<>(Arrays.asList(Permission.READ)));
+            save(limitedRead);
+            permissions.put(limitedUser, limitedRead);
+        }
         layer.setUserPermissions(permissions);
         return layer;
+    }
+
+    /**
+     * WPS processes with READ for the test user (compliance.wpsProcesses) and
+     * for the limited user (compliance.limitedWpsProcesses).
+     */
+    private void createWpsProcesses() {
+        Map<String, WpsProcess> processes = new HashMap<>();
+        for (String identifier : wpsProcesses) {
+            readableProcess(processes, identifier.trim(), testUser);
+        }
+        for (String identifier : limitedWpsProcesses) {
+            readableProcess(processes, identifier.trim(), limitedUser);
+        }
+        for (WpsProcess process : processes.values()) {
+            save(process);
+        }
+    }
+
+    private void readableProcess(Map<String, WpsProcess> processes, String identifier, User user) {
+        if (identifier.isEmpty()) {
+            return;
+        }
+        WpsProcess process = processes.computeIfAbsent(identifier, WpsProcess::new);
+        PermissionCollection read = new PermissionCollection();
+        read.setPermissions(new HashSet<>(Arrays.asList(Permission.READ)));
+        save(read);
+        Map<User, PermissionCollection> permissions = new HashMap<>(process.getUserPermissions());
+        permissions.put(user, read);
+        process.setUserPermissions(permissions);
+    }
+
+    private boolean isLimitedLayer(String name) {
+        for (String limited : limitedLayerNames) {
+            if (limited.trim().equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void save(PersistentObject object) {

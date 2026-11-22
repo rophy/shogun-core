@@ -79,7 +79,9 @@
     <bean id="wmtsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WmtsResponseInterceptor" />
     <bean id="wcsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WcsRequestInterceptor" />
     <bean id="wcsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WcsResponseInterceptor" />
-    <bean id="wpsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.impl.WpsRequestInterceptor" />
+    <bean id="wpsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WpsRequestInterceptor" />
     <bean id="wpsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WpsResponseInterceptor" />
+    <bean id="cswRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.CswRequestInterceptor" />
+    <bean id="cswResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.CswResponseInterceptor" />
 
 </beans>

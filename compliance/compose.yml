@@ -8,12 +8,14 @@ services:
       # data dir copy prepared by run-suite.sh
       GEOSERVER_DATA_DIR: /opt/geoserver_data
       SKIP_DEMO_DATA: "true"
-      # e.g. GEOSERVER_EXTENSIONS=wps for the WPS 1.0 suite (downloaded at start)
+      # e.g. GEOSERVER_EXTENSIONS=wps for the WPS 1.0 suite (pinned zips, see use-data.sh)
       INSTALL_EXTENSIONS: "true"
       STABLE_EXTENSIONS: ${GEOSERVER_EXTENSIONS:-}
       CORS_ENABLED: "false"
     volumes:
       - ./.run/geoserver_data:/opt/geoserver_data
+      # the pinned extension zips (see use-data.sh)
+      - ./.run/libs:/opt/additional_libs
     ports:
       - "127.0.0.1:18080:8080"
     healthcheck:
@@ -68,17 +70,19 @@ services:
       start_period: 20s
 
   postgres:
-    # Data store of the WFS 2.0 CITE data dir (database cite_wfs20, user cite).
+    # Data store of the WFS CITE data dirs (database cite_wfs10, cite_wfs11 or
+    # cite_wfs20, user cite).
     image: postgis/postgis:15-3.5-alpine
     environment:
       POSTGRES_DB: geoserver
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - ./.cache/geoserver-cite/wfs20/01-init-user.sh:/docker-entrypoint-initdb.d/01-init-user.sh:ro
-      - ./.cache/geoserver-cite/wfs20/citewfs-2.0/dataset-sf0-postgis2.sql:/docker-entrypoint-initdb.d/02-init-db.sql:ro
+      # init scripts of the WFS data dir in use (see use-data.sh)
+      - ./.run/pginit:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cite_wfs20"]
+      # TCP: the server of the init phase listens on the socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 30

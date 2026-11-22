@@ -2,6 +2,7 @@
 """Compare two TEAM Engine CTL result logs (direct vs. through SHOGun-Core).
 
 Usage: summarize.py <direct.xml> <shogun.xml> [--details]
+       summarize.py <run.xml>   (counts and failures of one run)
 
 Prints result counts for both runs and lists the tests that pass directly but
 not through SHOGun-Core, grouped by their first failure message.
@@ -64,8 +65,20 @@ def counts(tests):
     return ", ".join("{} {}".format(v, k) for k, v in c.most_common())
 
 
+def single(path):
+    tests = load(path)
+    print("{} : {} tests: {}".format(path, len(tests), counts(tests)))
+    for name, assertion, result, messages in tests.values():
+        if result == 6:
+            print("  FAIL {}: {} | {}".format(name, assertion[:100], " | ".join(messages[:2])[:300]))
+
+
 def main():
-    direct, shogun = load(sys.argv[1]), load(sys.argv[2])
+    files = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if len(files) == 1:
+        single(files[0])
+        return
+    direct, shogun = load(files[0]), load(files[1])
     details = "--details" in sys.argv
     print("direct : {} tests: {}".format(len(direct), counts(direct)))
     print("shogun : {} tests: {}".format(len(shogun), counts(shogun)))
