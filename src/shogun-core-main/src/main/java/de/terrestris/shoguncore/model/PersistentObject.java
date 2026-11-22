@@ -72,7 +72,10 @@ public abstract class PersistentObject implements Serializable {
     @ManyToMany
     @JoinTable(
         name = "USERPERMISSIONS",
-        joinColumns = @JoinColumn(name = "ENTITY_ID"))
+        joinColumns = @JoinColumn(name = "ENTITY_ID"),
+        // the table has the permissions of all entity types: ENTITY_ID
+        // cannot reference the table of one type
+        foreignKey = @javax.persistence.ForeignKey(ConstraintMode.NO_CONSTRAINT))
     @JsonIgnore
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
     @Fetch(FetchMode.JOIN)
@@ -84,7 +87,9 @@ public abstract class PersistentObject implements Serializable {
     @ManyToMany
     @JoinTable(
         name = "GROUPPERMISSIONS",
-        joinColumns = @JoinColumn(name = "ENTITY_ID"))
+        joinColumns = @JoinColumn(name = "ENTITY_ID"),
+        // see userPermissions
+        foreignKey = @javax.persistence.ForeignKey(ConstraintMode.NO_CONSTRAINT))
     @JsonIgnore
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
     @Fetch(FetchMode.JOIN)
