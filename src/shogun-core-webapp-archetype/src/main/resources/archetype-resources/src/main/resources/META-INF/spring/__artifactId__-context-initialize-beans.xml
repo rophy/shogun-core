@@ -83,6 +83,11 @@
         <ref bean="defaultWCSResponseInterceptorRule" />
         <ref bean="defaultWPSRequestInterceptorRule" />
         <ref bean="defaultWPSResponseInterceptorRule" />
+        <ref bean="defaultCSWRequestInterceptorRule" />
+        <ref bean="defaultCSWResponseInterceptorRule" />
+
+        <!-- WPS processes that users may run -->
+        <ref bean="allWpsProcesses" />
 
         <!-- Applications -->
         <ref bean="defaultApplication"/>
@@ -617,6 +622,30 @@
         <property name="event" value="RESPONSE"/>
         <property name="rule" value="MODIFY"/>
         <property name="service" value="WPS"/>
+    </bean>
+
+    <bean id="defaultCSWRequestInterceptorRule" class="de.terrestris.shoguncore.model.interceptor.InterceptorRule">
+        <property name="event" value="REQUEST"/>
+        <property name="rule" value="MODIFY"/>
+        <property name="service" value="CSW"/>
+    </bean>
+
+    <bean id="defaultCSWResponseInterceptorRule" class="de.terrestris.shoguncore.model.interceptor.InterceptorRule">
+        <property name="event" value="RESPONSE"/>
+        <property name="rule" value="MODIFY"/>
+        <property name="service" value="CSW"/>
+    </bean>
+
+    <!-- The default user may run all GeoServer WPS processes ("*"). Use
+         identifiers such as "JTS:buffer" or "JTS:*" to allow fewer. -->
+    <bean id="allWpsProcesses" class="de.terrestris.shoguncore.model.wps.WpsProcess">
+        <property name="identifier" value="*" />
+        <property name="description" value="All WPS processes" />
+        <property name="userPermissions">
+            <util:map>
+                <entry key-ref="defaultUser" value-ref="defaultUserPermissionCollection" />
+            </util:map>
+        </property>
     </bean>
 
 </beans>

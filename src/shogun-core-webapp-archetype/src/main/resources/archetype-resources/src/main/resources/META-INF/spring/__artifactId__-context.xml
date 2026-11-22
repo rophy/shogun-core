@@ -85,7 +85,14 @@
     <bean id="wmsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WmsResponseInterceptor" />
     <bean id="wmtsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WmtsRequestInterceptor" />
     <bean id="wmtsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WmtsResponseInterceptor" />
-    <bean id="wcsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.impl.WcsRequestInterceptor" />
-    <bean id="wpsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.impl.WpsRequestInterceptor" />
+    <!-- WCS (also WCS 2.0 EO): READ on the coverage layers -->
+    <bean id="wcsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WcsRequestInterceptor" />
+    <bean id="wcsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WcsResponseInterceptor" />
+    <!-- WPS: READ on a WpsProcess entity per process (see initialize-beans), and on the input layers -->
+    <bean id="wpsRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WpsRequestInterceptor" />
+    <bean id="wpsResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.WpsResponseInterceptor" />
+    <!-- CSW 2.0.2 (GeoServer extension csw): records of readable layers only -->
+    <bean id="cswRequestInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.CswRequestInterceptor" />
+    <bean id="cswResponseInterceptor" class="de.terrestris.shoguncore.util.interceptor.secure.CswResponseInterceptor" />
 
 </beans>
