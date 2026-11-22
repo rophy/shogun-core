@@ -12,4 +12,11 @@ public interface WcsResponseInterceptorInterface {
 
     Response interceptGetCoverage(MutableHttpServletRequest request, Response response);
 
+    /**
+     * WCS 2.0 EO DescribeEOCoverageSet.
+     */
+    default Response interceptDescribeEOCoverageSet(MutableHttpServletRequest request, Response response) {
+        return interceptDescribeCoverage(request, response);
+    }
+
 }

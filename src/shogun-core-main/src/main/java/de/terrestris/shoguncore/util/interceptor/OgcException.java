@@ -38,6 +38,16 @@ public class OgcException extends RuntimeException {
 
     private Map<String, String> params = new HashMap<>();
 
+    /** The HTTP status, if not the one of the code (see {@link #getHttpStatus(String)}). */
+    private HttpStatus httpStatus;
+
+    /**
+     * True if the version came from a VERSION parameter (not AcceptVersions
+     * of OWS Common 1.1): for a request without a known service, GeoServer's
+     * /ows then answers with an OWS 1.0 report.
+     */
+    private boolean versionParameter = true;
+
     public OgcException(String code, String locator, String message) {
         super(message);
         this.code = code;
@@ -70,6 +80,26 @@ public class OgcException extends RuntimeException {
         if (StringUtils.isEmpty(version)) {
             version = requestVersion;
         }
+        return this;
+    }
+
+    /**
+     * @param fromVersionParameter true if the version of the request came from
+     * a VERSION parameter, false for AcceptVersions
+     */
+    public OgcException withVersionParameter(boolean fromVersionParameter) {
+        this.versionParameter = fromVersionParameter;
+        return this;
+    }
+
+    /**
+     * Sets the HTTP status of the report, e.g. to send an error with the
+     * status that GeoServer uses for it.
+     *
+     * @param status The HTTP status
+     */
+    public OgcException withHttpStatus(HttpStatus status) {
+        this.httpStatus = status;
         return this;
     }
 
@@ -140,6 +170,21 @@ public class OgcException extends RuntimeException {
                     + "<ServiceException" + codeAttr + locatorAttr + ">" + text + "</ServiceException>"
                     + "</ServiceExceptionReport>";
             }
+        } else if (isOgcServiceException(service, version)) {
+            // WFS 1.0 and WCS 1.0: the OGC ServiceExceptionReport, as in GeoServer
+            String codeAttr = NO_APPLICABLE_CODE.equals(code) ? "" : " code=\"" + code + "\"";
+            xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<ServiceExceptionReport version=\"1.2.0\" xmlns=\"http://www.opengis.net/ogc\">"
+                + "<ServiceException" + codeAttr + locatorAttr + ">" + text + "</ServiceException>"
+                + "</ServiceExceptionReport>";
+        } else if (isOws10(service, version)) {
+            // WFS 1.1 uses OWS Common 1.0. GeoServer also sends this report
+            // for 1.x requests without a service.
+            xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">"
+                + "<ows:Exception exceptionCode=\"" + code + "\"" + locatorAttr + ">"
+                + "<ows:ExceptionText>" + text + "</ows:ExceptionText>"
+                + "</ows:Exception></ows:ExceptionReport>";
         } else {
             // OWS Common 2.0: WCS 2.0. WFS 2.0, WMTS 1.0 and WPS 1.0 use OWS Common 1.1.
             boolean ows2 = "WCS".equalsIgnoreCase(service) && StringUtils.startsWith(version, "2");
@@ -162,7 +207,9 @@ public class OgcException extends RuntimeException {
      * @return The media type of the report
      */
     public MediaType getMediaType(String service, String version) {
-        if (isWms(service) && StringUtils.startsWith(version, "1.1")) {
+        if ((isWms(service) && StringUtils.startsWith(version, "1.1"))
+            || ("WCS".equalsIgnoreCase(service) && StringUtils.startsWith(version, "1.0"))) {
+            // WMS 1.1.1 and WCS 1.0 (as in GeoServer)
             return MediaType.parseMediaType("application/vnd.ogc.se_xml");
         }
         return MediaType.TEXT_XML;
@@ -173,7 +220,11 @@ public class OgcException extends RuntimeException {
      * exception code to an HTTP status.
      */
     public HttpStatus getHttpStatus(String service) {
-        if (isWms(service)) {
+        if (httpStatus != null) {
+            return httpStatus;
+        }
+        if (isWms(service) || isOgcServiceException(service, version) || isOws10(service, version)) {
+            // these versions have no HTTP status rules; GeoServer uses 200
             return HttpStatus.OK;
         }
         if (OPERATION_NOT_SUPPORTED.equals(code)) {
@@ -187,6 +238,30 @@ public class OgcException extends RuntimeException {
             return HttpStatus.BAD_REQUEST;
         }
         return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    /**
+     * @return true for WFS 1.0 and WCS 1.0, which use the OGC
+     * ServiceExceptionReport 1.2.0
+     */
+    private static boolean isOgcServiceException(String service, String version) {
+        return ("WFS".equalsIgnoreCase(service) || "WCS".equalsIgnoreCase(service))
+            && StringUtils.startsWith(version, "1.0");
+    }
+
+    /**
+     * @return true for WFS 1.1, and for 1.x requests (VERSION parameter)
+     * without a known service
+     */
+    private boolean isOws10(String service, String version) {
+        if ("WFS".equalsIgnoreCase(service)) {
+            return StringUtils.startsWith(version, "1.1");
+        }
+        return versionParameter && !isKnownService(service) && StringUtils.startsWith(version, "1.");
+    }
+
+    private static boolean isKnownService(String service) {
+        return de.terrestris.shoguncore.util.enumeration.OgcEnum.ServiceType.fromString(service) != null;
     }
 
     /**

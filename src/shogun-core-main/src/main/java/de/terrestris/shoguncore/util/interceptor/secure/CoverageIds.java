@@ -59,6 +59,43 @@ final class CoverageIds {
     }
 
     /**
+     * @return The dataset series ids of a WCS 2.0 EO DescribeEOCoverageSet
+     * request (KVP eoId, or wcseo:eoId elements)
+     */
+    static List<String> eoIds(MutableHttpServletRequest request) {
+        List<String> ids = new ArrayList<>();
+        String value = request.getParameterIgnoreCase("eoId");
+        if (value != null) {
+            for (String id : value.split(",")) {
+                if (StringUtils.isNotBlank(id)) {
+                    ids.add(id.trim());
+                }
+            }
+            return ids;
+        }
+        String body = OgcXmlUtil.getRequestBody(request);
+        if (StringUtils.isBlank(body)) {
+            return ids;
+        }
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            Document doc = factory.newDocumentBuilder().parse(new InputSource(new StringReader(body)));
+            NodeList nodes = doc.getElementsByTagNameNS("*", "eoId");
+            for (int i = 0; i < nodes.getLength(); i++) {
+                if (StringUtils.isNotBlank(nodes.item(i).getTextContent())) {
+                    ids.add(nodes.item(i).getTextContent().trim());
+                }
+            }
+        } catch (ParserConfigurationException | SAXException | IOException e) {
+            // GeoServer reports the invalid request
+            return ids;
+        }
+        return ids;
+    }
+
+    /**
      * @return The requested coverage identifiers. Empty if there are none.
      */
     static List<String> fromRequest(MutableHttpServletRequest request) {

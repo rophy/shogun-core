@@ -37,6 +37,11 @@ public class WcsResponseInterceptor implements WcsResponseInterceptorInterface {
 
     private static final String XLINK = "http://www.w3.org/1999/xlink";
 
+    /** WCS 2.0 EO: the dataset series in the capabilities. */
+    private static final String DATASET_SERIES = "//*[local-name()='DatasetSeriesSummary']";
+
+    private static final String DATASET_SERIES_ID = "*[local-name()='DatasetSeriesId']";
+
     @Autowired
     @Qualifier("layerService")
     protected LayerService<Layer, LayerDao<Layer>> layerService;
@@ -76,6 +81,15 @@ public class WcsResponseInterceptor implements WcsResponseInterceptorInterface {
             String id = xpath.evaluate(COVERAGE_ID, coverage);
             if (id.isEmpty() || !allowed.contains(LayerNames.coverageKey(id, namespace))) {
                 toRemove.add(coverage);
+            }
+        }
+        // WCS 2.0 EO capabilities: the dataset series of the coverages
+        NodeList series = (NodeList) xpath.evaluate(DATASET_SERIES, doc, XPathConstants.NODESET);
+        for (int i = 0; i < series.getLength(); i++) {
+            Element summary = (Element) series.item(i);
+            String id = xpath.evaluate(DATASET_SERIES_ID, summary);
+            if (id.isEmpty() || !allowed.contains(LayerNames.datasetSeriesKey(id, namespace))) {
+                toRemove.add(summary);
             }
         }
         toRemove.forEach(element -> element.getParentNode().removeChild(element));

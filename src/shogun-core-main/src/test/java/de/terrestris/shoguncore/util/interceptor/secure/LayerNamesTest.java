@@ -25,4 +25,11 @@ public class LayerNamesTest {
         assertEquals("topp:tazdem", LayerNames.coverageKey("tazdem", "topp"));
         assertEquals("topp:tazdem", LayerNames.coverageKey("topp:tazdem", ""));
     }
+
+    @Test
+    public void wcs_eo_granules_and_dataset_series_map_to_their_coverage() {
+        assertEquals("sf:timeranges", LayerNames.coverageKey("sf__timeranges_granule_timeranges.1", "sf"));
+        assertEquals("sf:timeranges", LayerNames.datasetSeriesKey("sf__timeranges_dss", "sf"));
+        assertEquals("sf:timeranges", LayerNames.datasetSeriesKey("timeranges_dss", "sf"));
+    }
 }

@@ -74,12 +74,6 @@ public class OgcMessageTest {
         assertEquals(true, message.isWps());
     }
 
-    @Test
-    public void is_w3ds() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            null, null, null, null);
-        assertEquals(true, message.isW3ds());
-    }
 
     @Test
     public void is_wms_get_capabilities() {
@@ -186,40 +180,10 @@ public class OgcMessageTest {
         assertEquals(true, message.isWpsGetCapabilities());
     }
 
-    @Test
-    public void is_w3ds_get_capabilities() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            OgcEnum.OperationType.GET_CAPABILITIES, null, null, null);
-        assertEquals(true, message.isW3dsGetCapabilities());
-    }
 
-    @Test
-    public void is_w3ds_get_scene() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            OgcEnum.OperationType.GET_SCENE, null, null, null);
-        assertEquals(true, message.isW3dsGetScene());
-    }
 
-    @Test
-    public void is_w3ds_get_feature_info() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            OgcEnum.OperationType.GET_FEATURE_INFO, null, null, null);
-        assertEquals(true, message.isW3dsGetFeatureInfo());
-    }
 
-    @Test
-    public void is_w3ds_get_layer_info() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            OgcEnum.OperationType.GET_LAYER_INFO, null, null, null);
-        assertEquals(true, message.isW3dsGetLayerInfo());
-    }
 
-    @Test
-    public void is_w3ds_get_tile() {
-        OgcMessage message = new OgcMessage(OgcEnum.ServiceType.W3DS,
-            OgcEnum.OperationType.GET_TILE, null, null, null);
-        assertEquals(true, message.isW3dsGetTile());
-    }
 
     @Test
     public void is_wps_describe_process() {

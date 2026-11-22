@@ -10,10 +10,10 @@ import de.terrestris.shoguncore.model.security.Permission;
 import de.terrestris.shoguncore.service.UserService;
 import de.terrestris.shoguncore.model.layer.Layer;
 import de.terrestris.shoguncore.model.layer.source.ImageWmsLayerDataSource;
-import de.terrestris.shoguncore.model.layer.source.TileWmsLayerDataSource;
 import de.terrestris.shoguncore.model.layer.source.WfsLayerDataSource;
 import de.terrestris.shoguncore.service.LayerService;
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
+import de.terrestris.shoguncore.util.interceptor.OgcException;
 import de.terrestris.shoguncore.util.interceptor.WfsResponseInterceptorInterface;
 import de.terrestris.shoguncore.util.model.Response;
 
@@ -23,29 +23,21 @@ import org.deegree.commons.xml.CommonNamespaces;
 import org.deegree.commons.xml.NamespaceBindings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpHeaders;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import static javax.xml.xpath.XPathConstants.NODESET;
@@ -54,6 +46,8 @@ import static org.apache.logging.log4j.LogManager.getLogger;
 public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
 
     private static final Logger LOG = getLogger(WfsResponseInterceptor.class);
+
+    private static final String XSD = "http://www.w3.org/2001/XMLSchema";
 
     /**
      *
@@ -171,104 +165,97 @@ public class WfsResponseInterceptor implements WfsResponseInterceptorInterface {
         }
     }
 
+    /**
+     * Removes the feature types that the user may not read from the schema
+     * (XML) or the feature type list (JSON). A request with type names was
+     * checked by the request interceptor; a request without type names gets
+     * all types of GeoServer.
+     */
     @Override
     public Response interceptDescribeFeatureType(MutableHttpServletRequest request, Response response) {
         LOG.debug("Intercepting WFS DescribeFeatureType response");
-        ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        try {
-            if (response.getHeaders().get("content-type").get(0).toLowerCase(Locale.ROOT).contains("json")) {
+        String namespace = LayerNames.endpointNamespace(request);
+        Set<String> allowed = FeatureTypes.keys(layerService.findAll(), namespace);
+        if (CapabilitiesFilter.isXml(response)) {
+            return CapabilitiesFilter.filter(response, doc -> removeFeatureTypes(doc, allowed, namespace));
+        }
+        String contentType = response.getHeaders() == null ? null
+            : response.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE);
+        if (StringUtils.containsIgnoreCase(contentType, "json") && response.getBody() != null) {
+            try {
                 ObjectMapper objectMapper = new ObjectMapper();
-                JsonNode jsonObject = objectMapper.readTree(response.getBody());
-                String ns = jsonObject.get("targetPrefix").asText();
-                ArrayNode featureTypes = (ArrayNode) jsonObject.get("featureTypes");
-                List<Layer> allowedLayers = layerService.findAll();
-                int size = featureTypes.size();
-                for (int i = 0; i < size; i++) {
-                    String typeName = ns + ":" + featureTypes.get(i).get("typeName").asText();
-                    boolean match = false;
-                    for (Layer allowedLayer : allowedLayers) {
-                        if (allowedLayer.getSource() instanceof TileWmsLayerDataSource) {
-                            String names = ((TileWmsLayerDataSource) allowedLayer.getSource()).getLayerNames();
-                            if (names.equalsIgnoreCase(typeName)) {
-                                match = true;
-                                break;
-                            }
+                JsonNode json = objectMapper.readTree(response.getBody());
+                String prefix = json.path("targetPrefix").asText("");
+                JsonNode types = json.get("featureTypes");
+                if (types instanceof ArrayNode) {
+                    ArrayNode featureTypes = (ArrayNode) types;
+                    for (int i = featureTypes.size() - 1; i >= 0; i--) {
+                        String typeName = featureTypes.get(i).path("typeName").asText("");
+                        if (!allowed.contains(LayerNames.key(prefix.isEmpty() ? typeName : prefix + ":" + typeName,
+                            namespace))) {
+                            featureTypes.remove(i);
                         }
                     }
-                    if (!match) {
-                        featureTypes.remove(i);
-                    }
                 }
-                final byte[] bytes = objectMapper.writeValueAsBytes(jsonObject);
-                response.setBody(bytes);
-                return response;
+                response.setBody(objectMapper.writeValueAsBytes(json));
+            } catch (IOException e) {
+                LOG.warn("Could not filter the DescribeFeatureType response: " + e.getMessage());
+                throw new OgcException(OgcException.NO_APPLICABLE_CODE, null,
+                    "Could not filter the DescribeFeatureType response.");
             }
-            DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
-            builderFactory.setNamespaceAware(true);
-            DocumentBuilder builder = builderFactory.newDocumentBuilder();
-            Document doc = builder.parse(new ByteArrayInputStream(response.getBody()));
-            removeFeatureTypes(doc);
-            TransformerFactory factory = TransformerFactory.newInstance();
-            Transformer transformer = factory.newTransformer();
-            transformer.transform(new DOMSource(doc), new StreamResult(bout));
-            response.setBody(bout.toByteArray());
-        } catch (NullPointerException | ParserConfigurationException | SAXException | IOException | XPathExpressionException | TransformerException e) {
-            LOG.warn("Problem when intercepting WFS GetCapabilities: {}", e.getMessage());
-            LOG.trace("Stack trace:", e);
-            return null;
         }
         return response;
     }
 
-    private void removeFeatureTypes(Document doc) throws XPathExpressionException {
-        // get all layers allowed for this user in order to filter out not allowed ones
-        List<Layer> layers = layerService.findAll();
-        List<String> layerNames = new ArrayList<>();
-        for (Layer layer : layers) {
-            if (layer.getSource() instanceof ImageWmsLayerDataSource) {
-                ImageWmsLayerDataSource source = (ImageWmsLayerDataSource) layer.getSource();
-                if (source.getLayerNames().contains(":")) {
-                    layerNames.add(source.getLayerNames().split(":")[1]);
-                } else {
-                    layerNames.add(source.getLayerNames());
-                }
-            } else if (layer.getSource() instanceof WfsLayerDataSource) {
-                WfsLayerDataSource source = (WfsLayerDataSource) layer.getSource();
-                if (source.getTypeName().contains(":")) {
-                    layerNames.add(source.getTypeName().split(":")[1]);
-                } else {
-                    layerNames.add(source.getTypeName());
-                }
-                if (source.getTypeNames().contains(":")) {
-                    layerNames.add(source.getTypeNames().split(":")[1]);
-                } else {
-                    layerNames.add(source.getTypeNames());
+    /**
+     * Removes the global feature elements (elements with a substitution
+     * group, not abstract) that the user may not read, and the complex types that only
+     * these elements use. Other types (e.g. GeoServer's
+     * AbstractSimpleFeatureType of WFS 1.0) stay.
+     */
+    static void removeFeatureTypes(Document doc, Set<String> allowed, String namespace) {
+        Element schema = doc.getDocumentElement();
+        String targetNamespace = schema.getAttribute("targetNamespace");
+        String prefix = StringUtils.defaultString(schema.lookupPrefix(targetNamespace));
+        List<Element> elements = new ArrayList<>();
+        Map<String, Element> complexTypes = new HashMap<>();
+        for (Node child = schema.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (child instanceof Element && XSD.equals(child.getNamespaceURI())) {
+                Element element = (Element) child;
+                if ("element".equals(element.getLocalName())) {
+                    elements.add(element);
+                } else if ("complexType".equals(element.getLocalName())) {
+                    complexTypes.put(element.getAttribute("name"), element);
                 }
             }
         }
-        XPath xpath = XPathFactory.newInstance().newXPath();
-        xpath.setNamespaceContext(CommonNamespaces.getNamespaceContext().
-            addNamespace("wfs", "http://www.opengis.net/wfs").
-            addNamespace("xsd", "http://www.w3.org/2001/XMLSchema"));
-        NodeList list = (NodeList) xpath.compile("//xsd:complexType").evaluate(doc.getDocumentElement(), NODESET);
-        List<Element> toRemove = new ArrayList<>();
-        for (int i = 0; i < list.getLength(); ++i) {
-            Element name = (Element) list.item(i);
-            String str = name.getAttribute("name");
-            str = str.substring(0, str.lastIndexOf("Type"));
-            if (!layerNames.contains(str)) {
-                toRemove.add(name);
+        Set<String> keptTypes = new HashSet<>();
+        Set<String> removedTypes = new HashSet<>();
+        for (Element element : elements) {
+            String type = localPart(element.getAttribute("type"));
+            String name = element.getAttribute("name");
+            // abstract elements (e.g. _SimpleFeature of WFS 1.0) are not feature types
+            boolean feature = element.hasAttribute("substitutionGroup")
+                && !"true".equals(element.getAttribute("abstract"));
+            String key = LayerNames.key(prefix.isEmpty() ? name : prefix + ":" + name, namespace);
+            if (feature && !allowed.contains(key)) {
+                schema.removeChild(element);
+                removedTypes.add(type);
+            } else {
+                keptTypes.add(type);
             }
         }
-        list = (NodeList) xpath.compile("/xsd:schema/xsd:element").evaluate(doc.getDocumentElement(), NODESET);
-        for (int i = 0; i < list.getLength(); ++i) {
-            Element name = (Element) list.item(i);
-            String str = name.getAttribute("name");
-            if (!layerNames.contains(str)) {
-                toRemove.add(name);
+        removedTypes.removeAll(keptTypes);
+        for (String type : removedTypes) {
+            Element complexType = complexTypes.get(type);
+            if (complexType != null) {
+                schema.removeChild(complexType);
             }
         }
-        toRemove.forEach(element -> element.getParentNode().removeChild(element));
+    }
+
+    private static String localPart(String qualifiedName) {
+        return StringUtils.substringAfterLast(":" + StringUtils.defaultString(qualifiedName), ":");
     }
 
     @Override

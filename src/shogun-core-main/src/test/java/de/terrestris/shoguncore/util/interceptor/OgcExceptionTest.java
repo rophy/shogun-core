@@ -56,6 +56,47 @@ public class OgcExceptionTest {
     }
 
     @Test
+    public void wfs_10_and_wcs_10_get_an_ogc_service_exception_report_with_http_200() {
+        for (String service : new String[]{"WFS", "WCS"}) {
+            OgcException e = new OgcException(OgcException.INVALID_PARAMETER_VALUE, "typeName", "x")
+                .forRequest(service, "1.0.0");
+            assertTrue(report(e).contains(
+                "<ServiceExceptionReport version=\"1.2.0\" xmlns=\"http://www.opengis.net/ogc\">"));
+            assertTrue(report(e).contains("<ServiceException code=\"InvalidParameterValue\" locator=\"typeName\">"));
+            assertEquals(HttpStatus.OK, e.getHttpStatus());
+        }
+        OgcException wcs = new OgcException(OgcException.INVALID_PARAMETER_VALUE, "coverage", "x")
+            .forRequest("WCS", "1.0.0");
+        assertEquals("application/vnd.ogc.se_xml", wcs.getMediaType().toString());
+    }
+
+    @Test
+    public void wfs_11_gets_an_ows_10_exception_report_with_http_200() {
+        OgcException e = new OgcException(OgcException.INVALID_PARAMETER_VALUE, "typeName", "x")
+            .forRequest("WFS", "1.1.0");
+        assertTrue(report(e).contains("xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\""));
+        assertEquals(HttpStatus.OK, e.getHttpStatus());
+    }
+
+    @Test
+    public void requests_without_service_get_ows_10_for_version_and_ows_11_for_accept_versions() {
+        OgcException version = new OgcException(OgcException.MISSING_PARAMETER_VALUE, "service", "x")
+            .forRequest(null, "1.1.0");
+        assertTrue(report(version).contains("xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\""));
+        OgcException accept = new OgcException(OgcException.MISSING_PARAMETER_VALUE, "service", "x")
+            .forRequest(null, "1.0.0").withVersionParameter(false);
+        assertTrue(report(accept).contains("http://www.opengis.net/ows/1.1"));
+    }
+
+    @Test
+    public void the_http_status_can_be_set() {
+        OgcException e = new OgcException(OgcException.NO_APPLICABLE_CODE, null, "No such process: x")
+            .withHttpStatus(HttpStatus.OK).forRequest("WPS", "1.0.0");
+        assertEquals(HttpStatus.OK, e.getHttpStatus());
+        assertTrue(report(e).contains("http://www.opengis.net/ows/1.1"));
+    }
+
+    @Test
     public void wms_getmap_can_get_the_exception_as_image() {
         Map<String, String[]> params = new HashMap<>();
         params.put("REQUEST", new String[]{"GetMap"});

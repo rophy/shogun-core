@@ -22,6 +22,7 @@ public class ProxyUrlsTest {
             ProxyUrls.rewrite("http://geoserver:8080/geoserver/cite/wms?service=WMS&request=GetLegendGraphic"
                 + "&layer=Lakes", GEOSERVER, BASE));
         assertEquals(BASE, ProxyUrls.rewrite("http://geoserver:8080/geoserver/cite/wfs", GEOSERVER, BASE));
+        assertEquals(BASE, ProxyUrls.rewrite("http://geoserver:8080/geoserver/cite/csw", GEOSERVER, BASE));
         assertEquals(BASE + "?", ProxyUrls.rewrite("http://geoserver:8080/geoserver/gwc/service/wmts?",
             GEOSERVER, BASE));
     }

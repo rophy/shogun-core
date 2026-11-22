@@ -189,12 +189,39 @@ public class OgcMessage {
     }
 
     /**
-     * @return
+     * @return true for a CSW request
      */
-    public boolean isW3ds() {
+    public boolean isCsw() {
         return this.getService() != null &&
-            this.getService().equals(OgcEnum.ServiceType.W3DS);
+            this.getService().equals(OgcEnum.ServiceType.CSW);
     }
+
+    /**
+     * @param operation An operation
+     * @return true if the request has this operation
+     */
+    public boolean isOperation(OgcEnum.OperationType operation) {
+        return this.getOperation() != null && this.getOperation().equals(operation);
+    }
+
+    /**
+     * @return true for an operation of the GeoServer WMTS multi-dimensional
+     * extension (DescribeDomains, GetDomainValues, GetHistogram, GetFeature)
+     */
+    public boolean isWmtsMultiDimensional() {
+        return this.isWmts() && (isOperation(OgcEnum.OperationType.DESCRIBE_DOMAINS)
+            || isOperation(OgcEnum.OperationType.GET_DOMAIN_VALUES)
+            || isOperation(OgcEnum.OperationType.GET_HISTOGRAM)
+            || isOperation(OgcEnum.OperationType.GET_FEATURE));
+    }
+
+    /**
+     * @return true for a WCS 2.0 EO DescribeEOCoverageSet request
+     */
+    public boolean isWcsDescribeEOCoverageSet() {
+        return this.isWcs() && isOperation(OgcEnum.OperationType.DESCRIBE_EO_COVERAGE_SET);
+    }
+
 
     /**
      * @return
@@ -442,50 +469,10 @@ public class OgcMessage {
                 this.getOperation().equals(OgcEnum.OperationType.DISMISS));
     }
 
-    /**
-     * @return
-     */
-    public boolean isW3dsGetCapabilities() {
-        return this.isW3ds() &&
-            this.getOperation() != null &&
-            this.getOperation().equals(OgcEnum.OperationType.GET_CAPABILITIES);
-    }
 
-    /**
-     * @return
-     */
-    public boolean isW3dsGetScene() {
-        return this.isW3ds() &&
-            this.getOperation() != null &&
-            this.getOperation().equals(OgcEnum.OperationType.GET_SCENE);
-    }
 
-    /**
-     * @return
-     */
-    public boolean isW3dsGetFeatureInfo() {
-        return this.isW3ds() &&
-            this.getOperation() != null &&
-            this.getOperation().equals(OgcEnum.OperationType.GET_FEATURE_INFO);
-    }
 
-    /**
-     * @return
-     */
-    public boolean isW3dsGetLayerInfo() {
-        return this.isW3ds() &&
-            this.getOperation() != null &&
-            this.getOperation().equals(OgcEnum.OperationType.GET_LAYER_INFO);
-    }
 
-    /**
-     * @return
-     */
-    public boolean isW3dsGetTile() {
-        return this.isW3ds() &&
-            this.getOperation() != null &&
-            this.getOperation().equals(OgcEnum.OperationType.GET_TILE);
-    }
 
     /**
      * @return

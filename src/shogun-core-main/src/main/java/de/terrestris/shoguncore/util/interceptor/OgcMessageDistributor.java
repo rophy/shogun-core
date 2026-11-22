@@ -1,5 +1,7 @@
 package de.terrestris.shoguncore.util.interceptor;
 
+import de.terrestris.shoguncore.util.enumeration.OgcEnum.OperationType;
+
 import de.terrestris.shoguncore.util.model.Response;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -130,6 +132,14 @@ public class OgcMessageDistributor {
     @Qualifier("wpsResponseInterceptor")
     private WpsResponseInterceptorInterface wpsResponseInterceptor;
 
+    @Autowired(required = false)
+    @Qualifier("cswRequestInterceptor")
+    private CswRequestInterceptorInterface cswRequestInterceptor;
+
+    @Autowired(required = false)
+    @Qualifier("cswResponseInterceptor")
+    private CswResponseInterceptorInterface cswResponseInterceptor;
+
     /**
      * @param request
      * @param message
@@ -198,6 +208,8 @@ public class OgcMessageDistributor {
                 request = this.wmtsRequestInterceptor.interceptGetTile(request);
             } else if (message.isWmtsGetFeatureInfo()) {
                 request = this.wmtsRequestInterceptor.interceptGetFeatureInfo(request);
+            } else if (message.isWmtsMultiDimensional()) {
+                request = this.wmtsRequestInterceptor.interceptMultiDimensional(request);
             } else {
                 throw new InterceptorException(operationErrMsg);
             }
@@ -229,6 +241,8 @@ public class OgcMessageDistributor {
                 request = this.wcsRequestInterceptor.interceptDescribeCoverage(request);
             } else if (message.isWcsGetCoverage()) {
                 request = this.wcsRequestInterceptor.interceptGetCoverage(request);
+            } else if (message.isWcsDescribeEOCoverageSet()) {
+                request = this.wcsRequestInterceptor.interceptDescribeEOCoverageSet(request);
             } else {
                 throw new InterceptorException(operationErrMsg);
             }
@@ -253,6 +267,13 @@ public class OgcMessageDistributor {
 
             return request;
 
+        } else if (message.isCsw()) {
+            if (this.cswRequestInterceptor == null) {
+                LOG.debug(implErrMsg);
+                return request;
+            }
+            LOG.debug(infoMsg);
+            request = distributeToCswRequestInterceptor(request, message, operationErrMsg);
         } else {
             throw new InterceptorException(serviceErrMsg);
         }
@@ -366,6 +387,8 @@ public class OgcMessageDistributor {
                 response = this.wmtsResponseInterceptor.interceptGetTile(mutableRequest, response);
             } else if (message.isWmtsGetFeatureInfo()) {
                 response = this.wmtsResponseInterceptor.interceptGetFeatureInfo(mutableRequest, response);
+            } else if (message.isWmtsMultiDimensional()) {
+                response = this.wmtsResponseInterceptor.interceptMultiDimensional(mutableRequest, response);
             } else {
                 throw new InterceptorException(operationErrMsg);
             }
@@ -380,26 +403,7 @@ public class OgcMessageDistributor {
 
             LOG.debug(infoMsg);
 
-            if (message.isWfsGetCapabilities()) {
-                response = this.wfsResponseInterceptor.interceptGetCapabilities(mutableRequest, response);
-            } else if (message.isWfsGetFeature()) {
-                response = this.wfsResponseInterceptor.interceptGetFeature(mutableRequest, response);
-            } else if (message.isWfsDescribeFeatureType()) {
-                response = this.wfsResponseInterceptor.interceptDescribeFeatureType(mutableRequest, response);
-            } else if (message.isWfsTransaction()) {
-                response = this.wfsResponseInterceptor.interceptTransaction(mutableRequest, response);
-            } else if (message.isWfsLockFeature()) {
-                response = this.wfsResponseInterceptor.interceptLockFeature(mutableRequest, response);
-            } else if (message.isWfsGetPropertyValue()) {
-                response = this.wfsResponseInterceptor.interceptGetPropertyValue(mutableRequest, response);
-            } else if (message.isWfsGetFeatureWithLock()) {
-                response = this.wfsResponseInterceptor.interceptGetFeatureWithLock(mutableRequest, response);
-            } else if (message.isWfsListStoredQueries() || message.isWfsDescribeStoredQueries()
-                || message.isWfsCreateStoredQuery() || message.isWfsDropStoredQuery()) {
-                response = this.wfsResponseInterceptor.interceptStoredQueryOperation(mutableRequest, response);
-            } else {
-                throw new InterceptorException(operationErrMsg);
-            }
+            response = distributeToWfsResponseInterceptor(mutableRequest, response, message, operationErrMsg);
 
         } else if (message.isWcs()) {
 
@@ -417,6 +421,8 @@ public class OgcMessageDistributor {
                 response = this.wcsResponseInterceptor.interceptDescribeCoverage(mutableRequest, response);
             } else if (message.isWcsGetCoverage()) {
                 response = this.wcsResponseInterceptor.interceptGetCoverage(mutableRequest, response);
+            } else if (message.isWcsDescribeEOCoverageSet()) {
+                response = this.wcsResponseInterceptor.interceptDescribeEOCoverageSet(mutableRequest, response);
             } else {
                 throw new InterceptorException(operationErrMsg);
             }
@@ -441,6 +447,13 @@ public class OgcMessageDistributor {
                 throw new InterceptorException(operationErrMsg);
             }
 
+        } else if (message.isCsw()) {
+            if (this.cswResponseInterceptor == null) {
+                LOG.debug(implErrMsg);
+                return response;
+            }
+            LOG.debug(infoMsg);
+            response = distributeToCswResponseInterceptor(mutableRequest, response, message, operationErrMsg);
         } else {
             throw new InterceptorException(serviceErrMsg);
         }
@@ -544,4 +557,89 @@ public class OgcMessageDistributor {
     public void setWpsResponseInterceptor(WpsResponseInterceptorInterface wpsResponseInterceptor) {
         this.wpsResponseInterceptor = wpsResponseInterceptor;
     }
+    private Response distributeToWfsResponseInterceptor(MutableHttpServletRequest mutableRequest,
+        Response response, OgcMessage message, String operationErrMsg) throws InterceptorException {
+        if (message.isWfsGetCapabilities()) {
+            response = this.wfsResponseInterceptor.interceptGetCapabilities(mutableRequest, response);
+        } else if (message.isWfsGetFeature()) {
+            response = this.wfsResponseInterceptor.interceptGetFeature(mutableRequest, response);
+        } else if (message.isWfsDescribeFeatureType()) {
+            response = this.wfsResponseInterceptor.interceptDescribeFeatureType(mutableRequest, response);
+        } else if (message.isWfsTransaction()) {
+            response = this.wfsResponseInterceptor.interceptTransaction(mutableRequest, response);
+        } else if (message.isWfsLockFeature()) {
+            response = this.wfsResponseInterceptor.interceptLockFeature(mutableRequest, response);
+        } else if (message.isWfsGetPropertyValue()) {
+            response = this.wfsResponseInterceptor.interceptGetPropertyValue(mutableRequest, response);
+        } else if (message.isWfsGetFeatureWithLock()) {
+            response = this.wfsResponseInterceptor.interceptGetFeatureWithLock(mutableRequest, response);
+        } else if (message.isWfsListStoredQueries() || message.isWfsDescribeStoredQueries()
+            || message.isWfsCreateStoredQuery() || message.isWfsDropStoredQuery()) {
+            response = this.wfsResponseInterceptor.interceptStoredQueryOperation(mutableRequest, response);
+        } else {
+            throw new InterceptorException(operationErrMsg);
+        }
+        return response;
+    }
+
+    private MutableHttpServletRequest distributeToCswRequestInterceptor(MutableHttpServletRequest request,
+        OgcMessage message, String operationErrMsg) throws InterceptorException {
+        CswRequestInterceptorInterface csw = this.cswRequestInterceptor;
+        if (message.isOperation(OperationType.GET_CAPABILITIES)) {
+            return csw.interceptGetCapabilities(request);
+        } else if (message.isOperation(OperationType.DESCRIBE_RECORD)) {
+            return csw.interceptDescribeRecord(request);
+        } else if (message.isOperation(OperationType.GET_RECORDS)) {
+            return csw.interceptGetRecords(request);
+        } else if (message.isOperation(OperationType.GET_RECORD_BY_ID)) {
+            return csw.interceptGetRecordById(request);
+        } else if (message.isOperation(OperationType.GET_DOMAIN)) {
+            return csw.interceptGetDomain(request);
+        } else if (message.isOperation(OperationType.GET_REPOSITORY_ITEM)) {
+            return csw.interceptGetRepositoryItem(request);
+        } else if (message.isOperation(OperationType.DIRECT_DOWNLOAD)) {
+            return csw.interceptDirectDownload(request);
+        } else if (message.isOperation(OperationType.HARVEST) || message.isOperation(OperationType.TRANSACTION)) {
+            return csw.interceptCatalogChange(request);
+        }
+        throw new InterceptorException(operationErrMsg);
+    }
+
+    private Response distributeToCswResponseInterceptor(MutableHttpServletRequest request, Response response,
+        OgcMessage message, String operationErrMsg) throws InterceptorException {
+        CswResponseInterceptorInterface csw = this.cswResponseInterceptor;
+        if (message.isOperation(OperationType.GET_CAPABILITIES)) {
+            return csw.interceptGetCapabilities(request, response);
+        } else if (message.isOperation(OperationType.DESCRIBE_RECORD)) {
+            return csw.interceptDescribeRecord(request, response);
+        } else if (message.isOperation(OperationType.GET_RECORDS)) {
+            return csw.interceptGetRecords(request, response);
+        } else if (message.isOperation(OperationType.GET_RECORD_BY_ID)) {
+            return csw.interceptGetRecordById(request, response);
+        } else if (message.isOperation(OperationType.GET_DOMAIN)) {
+            return csw.interceptGetDomain(request, response);
+        } else if (message.isOperation(OperationType.GET_REPOSITORY_ITEM)) {
+            return csw.interceptGetRepositoryItem(request, response);
+        } else if (message.isOperation(OperationType.DIRECT_DOWNLOAD)) {
+            return csw.interceptDirectDownload(request, response);
+        } else if (message.isOperation(OperationType.HARVEST) || message.isOperation(OperationType.TRANSACTION)) {
+            return csw.interceptCatalogChange(request, response);
+        }
+        throw new InterceptorException(operationErrMsg);
+    }
+
+    /**
+     * @param cswRequestInterceptor the cswRequestInterceptor to set
+     */
+    public void setCswRequestInterceptor(CswRequestInterceptorInterface cswRequestInterceptor) {
+        this.cswRequestInterceptor = cswRequestInterceptor;
+    }
+
+    /**
+     * @param cswResponseInterceptor the cswResponseInterceptor to set
+     */
+    public void setCswResponseInterceptor(CswResponseInterceptorInterface cswResponseInterceptor) {
+        this.cswResponseInterceptor = cswResponseInterceptor;
+    }
+
 }

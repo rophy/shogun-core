@@ -12,7 +12,7 @@ import java.net.URISyntaxException;
  */
 final class ProxyUrls {
 
-    private static final String[] SERVICE_PATHS = {"/ows", "/wms", "/wfs", "/wcs", "/wps", "/wmts"};
+    private static final String[] SERVICE_PATHS = {"/ows", "/wms", "/wfs", "/wcs", "/wps", "/wmts", "/csw"};
 
     private static final int HTTP_PORT = 80;
 

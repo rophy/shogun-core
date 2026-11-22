@@ -39,6 +39,11 @@ public class OgcEnum {
         wmtsOps.add(OperationType.GET_CAPABILITIES);
         wmtsOps.add(OperationType.GET_TILE);
         wmtsOps.add(OperationType.GET_FEATURE_INFO);
+        // GeoServer extension wmts-multi-dimensional
+        wmtsOps.add(OperationType.DESCRIBE_DOMAINS);
+        wmtsOps.add(OperationType.GET_DOMAIN_VALUES);
+        wmtsOps.add(OperationType.GET_HISTOGRAM);
+        wmtsOps.add(OperationType.GET_FEATURE);
 
         Set<OperationType> wfsOps = new HashSet<OperationType>();
         wfsOps.add(OperationType.GET_CAPABILITIES);
@@ -58,6 +63,8 @@ public class OgcEnum {
         wcsOps.add(OperationType.GET_CAPABILITIES);
         wcsOps.add(OperationType.DESCRIBE_COVERAGE);
         wcsOps.add(OperationType.GET_COVERAGE);
+        // WCS 2.0 Earth Observation Application Profile (GeoServer extension wcs2_0-eo)
+        wcsOps.add(OperationType.DESCRIBE_EO_COVERAGE_SET);
 
         Set<OperationType> wpsOps = new HashSet<OperationType>();
         wpsOps.add(OperationType.GET_CAPABILITIES);
@@ -68,20 +75,24 @@ public class OgcEnum {
         wpsOps.add(OperationType.GET_EXECUTION_RESULT);
         wpsOps.add(OperationType.DISMISS);
 
-        Set<OperationType> w3dsOps = new HashSet<OperationType>();
-        w3dsOps.add(OperationType.GET_CAPABILITIES);
-        w3dsOps.add(OperationType.GET_SCENE);
-        w3dsOps.add(OperationType.GET_FEATURE_INFO);
-        w3dsOps.add(OperationType.GET_LAYER_INFO);
-        w3dsOps.add(OperationType.GET_TILE);
-
+        // CSW 2.0.2 (GeoServer extension csw); GeoServer adds GetRepositoryItem and DirectDownload
+        Set<OperationType> cswOps = new HashSet<OperationType>();
+        cswOps.add(OperationType.GET_CAPABILITIES);
+        cswOps.add(OperationType.DESCRIBE_RECORD);
+        cswOps.add(OperationType.GET_RECORDS);
+        cswOps.add(OperationType.GET_RECORD_BY_ID);
+        cswOps.add(OperationType.GET_DOMAIN);
+        cswOps.add(OperationType.GET_REPOSITORY_ITEM);
+        cswOps.add(OperationType.DIRECT_DOWNLOAD);
+        cswOps.add(OperationType.HARVEST);
+        cswOps.add(OperationType.TRANSACTION);
 
         map.put(ServiceType.WMS, Collections.unmodifiableSet(wmsOps));
         map.put(ServiceType.WMTS, Collections.unmodifiableSet(wmtsOps));
         map.put(ServiceType.WFS, Collections.unmodifiableSet(wfsOps));
         map.put(ServiceType.WCS, Collections.unmodifiableSet(wcsOps));
         map.put(ServiceType.WPS, Collections.unmodifiableSet(wpsOps));
-        map.put(ServiceType.W3DS, Collections.unmodifiableSet(w3dsOps));
+        map.put(ServiceType.CSW, Collections.unmodifiableSet(cswOps));
 
         // store it in the lookup
         OPERATIONS_BY_SERVICETYPE = Collections.unmodifiableMap(map);
@@ -122,7 +133,11 @@ public class OgcEnum {
         getCapSet.add(ServiceType.WFS);
         getCapSet.add(ServiceType.WCS);
         getCapSet.add(ServiceType.WPS);
+        getCapSet.add(ServiceType.CSW);
         getCapSet = Collections.unmodifiableSet(getCapSet);
+
+        // A set containing only the CSW ServiceType
+        Set<ServiceType> cswSet = Collections.singleton(ServiceType.CSW);
 
         // look up all WMS operations from the previously created map
         Set<OperationType> wmsOperations = OPERATIONS_BY_SERVICETYPE.get(ServiceType.WMS);
@@ -137,6 +152,13 @@ public class OgcEnum {
 
         // put all ServiceTypes for the GetCapability operation
         map.put(OperationType.GET_CAPABILITIES, getCapSet);
+        // CSW first: operations that WFS has, too (Transaction), stay WFS
+        // operations below, as in GeoServer without a SERVICE parameter
+        for (OperationType cswOperation : OPERATIONS_BY_SERVICETYPE.get(ServiceType.CSW)) {
+            if (!OperationType.GET_CAPABILITIES.equals(cswOperation)) {
+                map.put(cswOperation, cswSet);
+            }
+        }
         // for WMS operations, put the WMS set, unless it's the GetCapability op
         for (OperationType wmsOperation : wmsOperations) {
             if (!OperationType.GET_CAPABILITIES.equals(wmsOperation)) {
@@ -354,7 +376,7 @@ public class OgcEnum {
         WFS("WFS"),
         WCS("WCS"),
         WPS("WPS"),
-        W3DS("W3DS");
+        CSW("CSW");
 
         private final String value;
 
@@ -428,9 +450,18 @@ public class OgcEnum {
         GET_EXECUTION_STATUS("GetExecutionStatus"),
         GET_EXECUTION_RESULT("GetExecutionResult"),
         DISMISS("Dismiss"),
-        GET_SCENE("GetScene"),
-        GET_LAYER_INFO("GetLayerInfo"),
-        GET_TILE("GetTile");
+        GET_TILE("GetTile"),
+        DESCRIBE_DOMAINS("DescribeDomains"),
+        GET_DOMAIN_VALUES("GetDomainValues"),
+        GET_HISTOGRAM("GetHistogram"),
+        DESCRIBE_EO_COVERAGE_SET("DescribeEOCoverageSet"),
+        DESCRIBE_RECORD("DescribeRecord"),
+        GET_RECORDS("GetRecords"),
+        GET_RECORD_BY_ID("GetRecordById"),
+        GET_DOMAIN("GetDomain"),
+        GET_REPOSITORY_ITEM("GetRepositoryItem"),
+        DIRECT_DOWNLOAD("DirectDownload"),
+        HARVEST("Harvest");
 
         private final String value;
 

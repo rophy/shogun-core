@@ -30,8 +30,11 @@ final class TypeNames {
     /** XML attributes with (space separated) type names. */
     private static final String[] ATTRIBUTES = {"typeNames", "typeName", "returnFeatureTypes"};
 
-    /** KVP namespace bindings, e.g. xmlns(ns1,http://example.com). */
-    private static final Pattern XMLNS = Pattern.compile("xmlns\\(([^,()]*),([^()]*)\\)");
+    /**
+     * KVP namespace bindings: WFS 2.0 xmlns(ns1,http://example.com), WFS 1.1
+     * xmlns(ns1=http://example.com).
+     */
+    private static final Pattern XMLNS = Pattern.compile("xmlns\\(([^,=()]*)[,=]([^()]*)\\)");
 
     /**
      * Marks a name with a prefix that the request binds to a namespace URI

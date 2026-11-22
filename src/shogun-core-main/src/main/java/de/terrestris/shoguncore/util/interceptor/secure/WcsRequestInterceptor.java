@@ -12,7 +12,10 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import static org.apache.logging.log4j.LogManager.getLogger;
@@ -30,6 +33,9 @@ public class WcsRequestInterceptor extends BaseInterceptor implements WcsRequest
 
     /** WCS 2.0 exception code for unknown coverages. */
     static final String NO_SUCH_COVERAGE = "NoSuchCoverage";
+
+    /** WCS 2.0 EO exception code of GeoServer for unknown dataset series. */
+    static final String NO_SUCH_EO_DATASET = "noSuchEODataset";
 
     @Autowired
     @Qualifier("layerService")
@@ -79,6 +85,31 @@ public class WcsRequestInterceptor extends BaseInterceptor implements WcsRequest
                     CoverageIds.locator(request), id);
             }
         }
+    }
+
+    /**
+     * WCS 2.0 EO: each dataset series (eoId) needs READ on its coverage. A
+     * refused series gives the exception of an unknown one (GeoServer:
+     * noSuchEODataset, HTTP 404).
+     */
+    @Override
+    public MutableHttpServletRequest interceptDescribeEOCoverageSet(MutableHttpServletRequest request) {
+        LOG.debug("Intercepting WCS DescribeEOCoverageSet");
+        String namespace = LayerNames.endpointNamespace(request);
+        Set<String> allowed = LayerNames.wmsLayerKeys(layerService.findAll(),
+            request.getContextPath() + "/geoserver.action", namespace);
+        List<String> refused = new ArrayList<>();
+        for (String eoId : CoverageIds.eoIds(request)) {
+            if (!allowed.contains(LayerNames.datasetSeriesKey(eoId, namespace))) {
+                refused.add(eoId);
+            }
+        }
+        if (!refused.isEmpty()) {
+            throw new OgcException(NO_SUCH_EO_DATASET, "eoid",
+                "Could not find the requested coverage(s): " + StringUtils.join(refused, ", "))
+                .withHttpStatus(HttpStatus.NOT_FOUND);
+        }
+        return new GeoserverAuthHeaderRequest(request, gsUser, gsPass);
     }
 
     private static String version(MutableHttpServletRequest request) {

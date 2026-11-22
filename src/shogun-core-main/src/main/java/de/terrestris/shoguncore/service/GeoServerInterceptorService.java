@@ -76,6 +76,10 @@ public class GeoServerInterceptorService {
     private static final Pattern WMTS_PATTERN = Pattern.compile("/[^/]+/wmts.action/\\d+/(.*)");
     private static final String WMS_REFLECT_ENDPOINT = "/reflect";
     private static final String USE_REFLECT_PARAM = "useReflect";
+    private static final String WMS_1_0_GET_MAP = "map";
+
+    /** Request attribute: the SERVICE of an XML request without service attribute. */
+    static final String FORWARD_SERVICE = GeoServerInterceptorService.class.getName() + ".service";
 
     /**
      *
@@ -204,6 +208,10 @@ public class GeoServerInterceptorService {
                 if (queryString != null) {
                     requestUri = appendQueryString(requestUri, queryString);
                 }
+                Object service = request.getAttribute(FORWARD_SERVICE);
+                if (service != null) {
+                    requestUri = appendQueryString(requestUri, "SERVICE=" + service);
+                }
 
                 // get the request body if any
                 String body = OgcXmlUtil.getRequestBody(request);
@@ -311,27 +319,9 @@ public class GeoServerInterceptorService {
 
             if (Arrays.asList(FORWARD_RESPONSE_HEADER_KEYS).contains(headerKey)) {
 
-                // the GeoServer response may contain a subtype in the
-                // "Content-Type" header without double quotes surrounding the
-                // subtype's value. If this is set we need to surround it
-                // with double quotes as this is required by the Spring
-                // ResponseEntity (and the RFC 2616 standard).
-                Pattern pattern = Pattern.compile("subtype=(.*)");
-                Matcher matcher = pattern.matcher(headerVal);
-
-                if (matcher.find()) {
-                    String replaceCandidate = matcher.group(1);
-                    String replacer;
-
-                    replacer = StringUtils.prependIfMissing(
-                        replaceCandidate, "\"");
-                    replacer = StringUtils.appendIfMissing(
-                        replacer, "\"");
-
-                    headerVal = StringUtils.replace(headerVal,
-                        replaceCandidate, replacer);
-                }
-
+                // the value of GeoServer is kept (e.g. "text/xml; subtype=gml/3.1.1",
+                // which the WFS 1.1 ETS compares); the controller writes a
+                // content type that Spring cannot parse directly
                 responseHeaders.set(headerKey, headerVal);
                 LOG.trace("    > Forwarded");
             } else {
@@ -415,10 +405,12 @@ public class GeoServerInterceptorService {
             return interceptGeoServerRequest(mutableRequest);
         } catch (OgcException e) {
             throw e.forRequest(getRequestService(mutableRequest), getRequestVersion(mutableRequest))
+                .withVersionParameter(hasVersionParameter(mutableRequest))
                 .withParameters(mutableRequest.getParameterMap());
         } catch (InterceptorException | IOException e) {
             throw new OgcException(OgcException.NO_APPLICABLE_CODE, null, e.getMessage())
                 .forRequest(getRequestService(mutableRequest), getRequestVersion(mutableRequest))
+                .withVersionParameter(hasVersionParameter(mutableRequest))
                 .withParameters(mutableRequest.getParameterMap());
         }
     }
@@ -446,6 +438,18 @@ public class GeoServerInterceptorService {
         }
     }
 
+    /**
+     * @return true unless the version comes from AcceptVersions only
+     */
+    private static boolean hasVersionParameter(MutableHttpServletRequest request) {
+        try {
+            return StringUtils.isNotEmpty(MutableHttpServletRequest.getRequestParameterValue(request, "VERSION"))
+                || StringUtils.isEmpty(MutableHttpServletRequest.getRequestParameterValue(request, "ACCEPTVERSIONS"));
+        } catch (InterceptorException | IOException e) {
+            return true;
+        }
+    }
+
     private static String getRequestVersion(MutableHttpServletRequest request) {
         try {
             String version = MutableHttpServletRequest.getRequestParameterValue(request, "VERSION");
@@ -461,10 +465,67 @@ public class GeoServerInterceptorService {
                     version = matcher.group(1);
                 }
             }
+            if ("POST".equalsIgnoreCase(request.getMethod())) {
+                // the WCS namespace of an XML request defines its version
+                // (e.g. for a missing or invalid version attribute)
+                String namespaceVersion = versionOfNamespace(OgcXmlUtil.getRequestBody(request));
+                if (namespaceVersion != null) {
+                    version = namespaceVersion;
+                }
+            }
             return version;
         } catch (InterceptorException | IOException e) {
             return null;
         }
+    }
+
+    /**
+     * @param body An XML request
+     * @return The service of the namespace of the root element (WFS, WCS,
+     * WPS, CSW), or null
+     */
+    static String serviceOfNamespace(String body) {
+        Matcher matcher = Pattern.compile("^\\s*(?:<\\?xml[^>]*>\\s*)?(?:<!--.*?-->\\s*)*<(?:(\\w+):)?\\w+([^>]*)>",
+            Pattern.DOTALL).matcher(StringUtils.defaultString(body));
+        if (!matcher.find()) {
+            return null;
+        }
+        String prefix = matcher.group(1);
+        Matcher ns = Pattern.compile("xmlns" + (prefix == null ? "" : ":" + prefix) + "\\s*=\\s*[\"']([^\"']*)[\"']")
+            .matcher(matcher.group(2));
+        if (!ns.find()) {
+            return null;
+        }
+        String uri = ns.group(1);
+        if (uri.startsWith("http://www.opengis.net/wfs")) {
+            return ServiceType.WFS.toString();
+        } else if (uri.startsWith("http://www.opengis.net/wcs")) {
+            return ServiceType.WCS.toString();
+        } else if (uri.startsWith("http://www.opengis.net/wps")) {
+            return ServiceType.WPS.toString();
+        } else if (uri.startsWith("http://www.opengis.net/cat/csw")) {
+            return ServiceType.CSW.toString();
+        }
+        return null;
+    }
+
+    /**
+     * @param body An XML request without a version
+     * @return The version of its WCS namespace (WCS 1.0 has its version in
+     * a version attribute only, which may be missing), or null
+     */
+    static String versionOfNamespace(String body) {
+        String text = StringUtils.defaultString(body);
+        if (text.contains("\"http://www.opengis.net/wcs/2.0\"")) {
+            return "2.0.1";
+        }
+        if (text.contains("\"http://www.opengis.net/wcs/1.1.1\"")) {
+            return "1.1.1";
+        }
+        if (text.contains("\"http://www.opengis.net/wcs\"")) {
+            return "1.0.0";
+        }
+        return null;
     }
 
     /**
@@ -544,6 +605,42 @@ public class GeoServerInterceptorService {
     }
 
     /**
+     * @param mutableRequest The request
+     * @param requestService The SERVICE of the request (may be empty)
+     * @return The endpoint that routes the request: the layer names, or the
+     * endpoint of the URL path
+     */
+    private String getRequestEndPoint(MutableHttpServletRequest mutableRequest, String requestService)
+        throws InterceptorException, IOException {
+        String requestEndPoint = MutableHttpServletRequest.getRequestParameterValue(
+            mutableRequest, OgcEnum.EndPoint.getAllValues());
+
+        // always use the custom_endpoint as endpoint and not one of the other options to successfully determine
+        // the base URI
+        if (!StringUtils.isEmpty(requestService) && requestService.equalsIgnoreCase("wmts")) {
+            requestEndPoint = MutableHttpServletRequest.getRequestParameterValue(
+                mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
+        }
+
+        // the endpoint of the URL path (/geoserver.action/{endpoint}) routes the
+        // request if the layer names do not name a known namespace, e.g. for
+        // unqualified layer names of a workspace bound service
+        String customEndPoint = MutableHttpServletRequest.getRequestParameterValue(
+            mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
+        if (OgcEndpoints.isGlobal(customEndPoint) && namespaceBoundUrl
+            && geoServerNameSpaces.containsKey(OgcEndpoints.GLOBAL)) {
+            // the global endpoint: the global GeoServer service, also for
+            // qualified layer names (requests may name several workspaces)
+            requestEndPoint = OgcEndpoints.GLOBAL;
+        } else if (StringUtils.isNotEmpty(customEndPoint) && namespaceBoundUrl
+            && !geoServerNameSpaces.containsKey(StringUtils.defaultString(getGeoServerNameSpace(requestEndPoint)))) {
+            requestEndPoint = customEndPoint;
+        }
+
+        return requestEndPoint;
+    }
+
+    /**
      * @param mutableRequest
      * @return
      * @throws InterceptorException
@@ -560,25 +657,12 @@ public class GeoServerInterceptorService {
             mutableRequest, OgcEnum.Service.SERVICE.toString());
         String requestOperation = MutableHttpServletRequest.getRequestParameterValue(
             mutableRequest, OgcEnum.Operation.OPERATION.toString());
-        String requestEndPoint = MutableHttpServletRequest.getRequestParameterValue(
-            mutableRequest, OgcEnum.EndPoint.getAllValues());
-
-        // always use the custom_endpoint as endpoint and not one of the other options to successfully determine
-        // the base URI
-        if (!StringUtils.isEmpty(requestService) && requestService.equalsIgnoreCase("wmts")) {
-            requestEndPoint = MutableHttpServletRequest.getRequestParameterValue(
-                mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
+        if (WMS_1_0_GET_MAP.equalsIgnoreCase(requestOperation)) {
+            // the WMS 1.0 name of GetMap; GeoServer accepts it, and the WMS
+            // 1.1.1 ETS tests it (wmsops-getmap-params-request-1)
+            requestOperation = OperationType.GET_MAP.toString();
         }
-
-        // the endpoint of the URL path (/geoserver.action/{endpoint}) routes the
-        // request if the layer names do not name a known namespace, e.g. for
-        // unqualified layer names of a workspace bound service
-        String customEndPoint = MutableHttpServletRequest.getRequestParameterValue(
-            mutableRequest, OgcEnum.EndPoint.CUSTOM_ENDPOINT.toString());
-        if (StringUtils.isNotEmpty(customEndPoint) && namespaceBoundUrl
-            && !geoServerNameSpaces.containsKey(StringUtils.defaultString(getGeoServerNameSpace(requestEndPoint)))) {
-            requestEndPoint = customEndPoint;
-        }
+        String requestEndPoint = getRequestEndPoint(mutableRequest, requestService);
 
         // check for RESTful WMTS request
         if (StringUtils.isEmpty(requestService) && StringUtils.isEmpty(requestOperation)) {
@@ -594,12 +678,22 @@ public class GeoServerInterceptorService {
             }
         }
 
-        // SERVICE is optional for operations that only one service has
-        // (e.g. GetMap), as in GeoServer
+        // SERVICE is optional for WMS operations (WMS GetMap etc. have no
+        // SERVICE parameter), as on the GeoServer WMS endpoint. The other
+        // services need it: GeoServer refuses them without SERVICE.
         if (StringUtils.isEmpty(requestService) && StringUtils.isNotEmpty(requestOperation)
             && StringUtils.isNotEmpty(requestEndPoint)) {
             requestService = inferService(requestOperation);
-            if (StringUtils.isEmpty(requestService)) {
+            boolean xmlOfService = requestService != null && "POST".equalsIgnoreCase(mutableRequest.getMethod())
+                && requestService.equals(serviceOfNamespace(OgcXmlUtil.getRequestBody(mutableRequest)));
+            // an XML request names its service with its namespace, as GeoServer reads it
+            if (xmlOfService) {
+                // GeoServer gets the service from its service path (e.g.
+                // /wfs) of the capabilities URLs; the interceptor sends it
+                // as SERVICE parameter
+                mutableRequest.setAttribute(FORWARD_SERVICE, requestService);
+            }
+            if (!ServiceType.WMS.toString().equals(requestService) && !xmlOfService) {
                 throw new OgcException(OgcException.MISSING_PARAMETER_VALUE, "service",
                     "The SERVICE parameter is missing.");
             }

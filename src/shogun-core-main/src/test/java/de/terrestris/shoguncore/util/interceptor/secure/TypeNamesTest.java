@@ -41,6 +41,15 @@ public class TypeNamesTest {
     }
 
     @Test
+    public void kvp_prefixes_bound_by_the_wfs_11_namespace_parameter() {
+        MockHttpServletRequest mock = new MockHttpServletRequest("GET", "/geoserver.action/sf");
+        mock.addParameter("typename", "app:EntitéGénérique");
+        mock.addParameter("namespace", "xmlns(app=http://cite.opengeospatial.org/gmlsf)");
+        Set<String> names = TypeNames.fromRequest(new MutableHttpServletRequest(mock));
+        assertEquals("sf:entitégénérique", TypeNames.key(names.iterator().next(), "sf"));
+    }
+
+    @Test
     public void xml_type_names_inserts_and_replaces_are_read() {
         Set<String> names = TypeNames.fromRequest(post(
             "<wfs:Transaction xmlns:wfs='http://www.opengis.net/wfs/2.0' xmlns:fes='http://www.opengis.net/fes/2.0'"

@@ -12,4 +12,11 @@ public interface WmtsResponseInterceptorInterface {
 
     Response interceptGetFeatureInfo(MutableHttpServletRequest request, Response response);
 
+    /**
+     * The operations of the GeoServer WMTS multi-dimensional extension.
+     */
+    default Response interceptMultiDimensional(MutableHttpServletRequest request, Response response) {
+        return response;
+    }
+
 }

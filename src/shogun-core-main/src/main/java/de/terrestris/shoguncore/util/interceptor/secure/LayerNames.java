@@ -1,6 +1,7 @@
 package de.terrestris.shoguncore.util.interceptor.secure;
 
 import de.terrestris.shoguncore.util.interceptor.MutableHttpServletRequest;
+import de.terrestris.shoguncore.util.interceptor.OgcEndpoints;
 import org.apache.commons.lang3.StringUtils;
 
 import de.terrestris.shoguncore.model.layer.Layer;
@@ -18,7 +19,22 @@ import java.util.Set;
  */
 final class LayerNames {
 
+    /** WCS 2.0 EO granule ids of GeoServer: {coverageId}_granule_{granule}. */
+    static final String GRANULE_SEPARATOR = "_granule_";
+
+    /** WCS 2.0 EO dataset series ids of GeoServer: {coverageId}_dss. */
+    static final String DATASET_SUFFIX = "_dss";
+
     private LayerNames() {
+    }
+
+    /**
+     * @param eoId A WCS 2.0 EO dataset series id, e.g. "sf__timeranges_dss"
+     * @param namespace The endpoint namespace (may be empty)
+     * @return The key of its coverage
+     */
+    static String datasetSeriesKey(String eoId, String namespace) {
+        return coverageKey(StringUtils.removeEnd(eoId.trim(), DATASET_SUFFIX), namespace);
     }
 
     /**
@@ -26,7 +42,8 @@ final class LayerNames {
      */
     static String endpointNamespace(MutableHttpServletRequest request) {
         String endpoint = request.getParameterIgnoreCase("CUSTOM_ENDPOINT");
-        if (StringUtils.isEmpty(endpoint)) {
+        if (StringUtils.isEmpty(endpoint) || OgcEndpoints.isGlobal(endpoint)) {
+            // the global endpoint has no namespace: names must be qualified
             return "";
         }
         return endpoint.contains(":") ? endpoint.split(":")[0] : endpoint;
@@ -47,12 +64,19 @@ final class LayerNames {
 
     /**
      * @param coverageId A WCS coverage identifier. GeoServer uses
-     * "workspace__name" in WCS 2.0, as ":" is not allowed there.
+     * "workspace__name" in WCS 2.0, as ":" is not allowed there. An EO
+     * granule id gives the key of its coverage.
      * @param namespace The endpoint namespace (may be empty)
      * @return A key that is equal for the same layer
      */
     static String coverageKey(String coverageId, String namespace) {
         String name = coverageId.trim();
+        // WCS 2.0 EO granules (GeoServer extension wcs2_0-eo):
+        // "{coverageId}_granule_{granule}" belongs to the coverage
+        int granule = name.indexOf(GRANULE_SEPARATOR);
+        if (granule > 0) {
+            name = name.substring(0, granule);
+        }
         int index = name.indexOf("__");
         if (!name.contains(":") && index > 0) {
             name = name.substring(0, index) + ":" + name.substring(index + 2);

@@ -11,4 +11,13 @@ public interface WmtsRequestInterceptorInterface {
 
     MutableHttpServletRequest interceptGetFeatureInfo(MutableHttpServletRequest request);
 
+    /**
+     * The operations of the GeoServer WMTS multi-dimensional extension
+     * (DescribeDomains, GetDomainValues, GetHistogram, GetFeature). They read
+     * one layer (parameter LAYER), like GetTile.
+     */
+    default MutableHttpServletRequest interceptMultiDimensional(MutableHttpServletRequest request) {
+        return interceptGetTile(request);
+    }
+
 }
